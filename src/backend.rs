@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 
 use crate::*;
+pub(crate) mod native;
 
 use self::finite::FiniteRing;
 
@@ -8,8 +9,7 @@ pub trait Backend<F: FiniteRing>: Debug + Clone + Sized + Default {
     type V: Debug + Clone;
     type Error: std::error::Error;
 
-    fn new(hasher_prefix: Vec<F>, rand_seed: &[F]) -> Result<Self, Self::Error>;
-    fn hash_with_seed(&mut self, seed: &F, input: &[F]) -> Result<Self::V, Self::Error>;
+    fn new(hasher_prefix: Vec<F>) -> Result<Self, Self::Error>;
     fn load_value(&mut self, a: &Self::V) -> Result<(), Self::Error>;
     fn expose_value(&mut self, a: &Self::V) -> Result<(), Self::Error>;
     fn constant(&mut self, a: &F) -> Result<Self::V, Self::Error>;
@@ -18,6 +18,15 @@ pub trait Backend<F: FiniteRing>: Debug + Clone + Sized + Default {
     fn sub(&mut self, a: &Self::V, b: &Self::V) -> Result<Self::V, Self::Error>;
     fn neg(&mut self, a: &Self::V) -> Result<Self::V, Self::Error>;
     fn eq(&mut self, a: &Self::V, b: &Self::V) -> Result<Self::V, Self::Error>;
+    // fn mod_const(&mut self, a: &Self::V, n: u8) -> Result<Self::V, Self::Error>;
+
+    fn zero(&mut self) -> Result<Self::V, Self::Error> {
+        self.constant(&F::zero())
+    }
+
+    fn one(&mut self) -> Result<Self::V, Self::Error> {
+        self.constant(&F::one())
+    }
 
     fn lc(&mut self, coeffs: &[F], vars: &[Self::V]) -> Result<Self::V, Self::Error> {
         let mut sum = self.constant(&F::zero())?;
@@ -28,4 +37,28 @@ pub trait Backend<F: FiniteRing>: Debug + Clone + Sized + Default {
         }
         Ok(sum)
     }
+
+    fn neq(&mut self, a: &Self::V, b: &Self::V) -> Result<Self::V, Self::Error> {
+        let is_eq = self.eq(a, b)?;
+        let one: <Self as Backend<F>>::V = self.one()?;
+        self.sub(&one, &is_eq)
+    }
+
+    fn hash_input_share(
+        &mut self,
+        rand_seed: &[Self::V],
+        input_idx: u32,
+    ) -> Result<Self::V, Self::Error>;
+    fn hash_mul_pad(
+        &mut self,
+        rand_seed: &[Self::V],
+        input: &[Self::V],
+    ) -> Result<Self::V, Self::Error>;
+    fn hash_commit(
+        &mut self,
+        rand_seed: &[Self::V],
+        input: &[Self::V],
+    ) -> Result<Vec<Self::V>, Self::Error>;
+    fn hash_each_transcript(&mut self, input: &[Self::V]) -> Result<Vec<Self::V>, Self::Error>;
+    fn hash_challenge(&mut self, input: &[Self::V]) -> Result<Vec<Self::V>, Self::Error>;
 }

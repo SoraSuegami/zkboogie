@@ -143,7 +143,7 @@ impl<F: FiniteRing> Circuit<F> {
         &self.gates[gate_id]
     }
 
-    pub fn enumerate_gates(self) -> Vec<Gate<F>> {
+    pub fn enumerate_gates(&self) -> Vec<Gate<F>> {
         let mut gates: Vec<_> = self.gates.iter().collect();
         gates.sort_by_key(|(id, _)| *id);
         gates.into_iter().map(|(_, gate)| gate.clone()).collect()
