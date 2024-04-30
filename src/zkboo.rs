@@ -584,11 +584,53 @@ mod test {
             vec![mul]
         };
 
+        let secpar = 100;
         let hasher_prefix = vec![];
         let mut back = NativeBackend::<F, Poseidon254Native>::new(hasher_prefix).unwrap();
-        let proof = zkboo_prove(2, &mut rng, &mut back, &circuit, &inputs).unwrap();
+        let prove_time = start_timer!(|| "Proving");
+        let proof = zkboo_prove(secpar, &mut rng, &mut back, &circuit, &inputs).unwrap();
+        end_timer!(prove_time);
         let is_valid = proof
-            .verify_whole(2, &mut back, &circuit, &expected_output)
+            .verify_whole(secpar, &mut back, &circuit, &expected_output)
+            .unwrap();
+        assert!(is_valid);
+    }
+
+    #[test]
+    fn test_all_ops() {
+        let mut circuit_builder = CircuitBuilder::<F>::new();
+        let inputs = circuit_builder.inputs(4);
+        let const_add = circuit_builder.const_add(F::from(1u32), &inputs[0]);
+        let const_mul = circuit_builder.const_mul(F::from(2u32), &inputs[1]);
+        let add1 = circuit_builder.add(&const_add, &inputs[2]);
+        let mul = circuit_builder.mul(&const_mul, &inputs[3]);
+        let add2 = circuit_builder.add(&add1, &mul);
+        let circuit = circuit_builder.output(&[add1, mul, add2]);
+
+        let mut rng: rand::prelude::StdRng = ark_std::test_rng();
+        let inputs = vec![
+            F::rand(&mut rng),
+            F::rand(&mut rng),
+            F::rand(&mut rng),
+            F::rand(&mut rng),
+        ];
+        let expected_output = {
+            let const_add = F::from(1u32).add(&inputs[0]);
+            let const_mul = F::from(2u32).mul(&inputs[1]);
+            let add1 = const_add.add(&inputs[2]);
+            let mul = const_mul.mul(&inputs[3]);
+            let add2 = add1.add(&mul);
+            vec![add1, mul, add2]
+        };
+
+        let secpar = 100;
+        let hasher_prefix = vec![];
+        let mut back = NativeBackend::<F, Poseidon254Native>::new(hasher_prefix).unwrap();
+        let prove_time = start_timer!(|| "Proving");
+        let proof = zkboo_prove(secpar, &mut rng, &mut back, &circuit, &inputs).unwrap();
+        end_timer!(prove_time);
+        let is_valid = proof
+            .verify_whole(secpar, &mut back, &circuit, &expected_output)
             .unwrap();
         assert!(is_valid);
     }
