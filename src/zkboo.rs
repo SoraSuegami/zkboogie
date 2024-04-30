@@ -34,14 +34,6 @@ impl<F: FiniteRing, B: Backend<F>> View<F, B> {
         self.wire_shares.get(&gate_id)
     }
 
-    // pub fn compressed_shares(&self) -> Vec<(GateId, B::V)> {
-    //     self.wire_shares
-    //         .iter()
-    //         .filter(|(_, (_, is_indp))| *is_indp)
-    //         .map(|(gate_id, (value, _))| (*gate_id, value.clone()))
-    //         .collect_vec()
-    // }
-
     pub fn commit_view(&self, back: &mut B) -> Result<Vec<B::V>, B::Error> {
         let shares = self.wire_shares.values().cloned().collect_vec();
         let commit = back.hash_commit(self.rand_seed(), &shares)?;
@@ -53,8 +45,8 @@ impl<F: FiniteRing, B: Backend<F>> View<F, B> {
         back: &mut B,
         gate: Gate<F>,
         input: &B::V,
-        e1_view: &mut View<F, B>,
-        e2_view: &mut View<F, B>,
+        e1_view: &View<F, B>,
+        e2_view: &View<F, B>,
     ) -> Result<(), B::Error> {
         if self.player_idx < 2 {
             if let GateType::Input(input_idx) = gate.gate_type {
@@ -153,17 +145,12 @@ impl<F: FiniteRing, B: Backend<F>> View<F, B> {
 #[derive(Debug, Clone)]
 pub struct ZKBooEachProof<F: FiniteRing, B: Backend<F>> {
     pub e2_commitment: Vec<B::V>,
+    pub e: u8,
     pub e1_view: View<F, B>,
     pub e_seed: Vec<B::V>,
     pub e1_seed: Vec<B::V>,
     pub transcript_digest: Vec<B::V>,
 }
-
-// #[derive(Debug, Clone)]
-// pub struct ZKBooEachVerifyResult<F: FiniteRing, B: Backend<F>> {
-//     pub is_valid: B::V,
-//     pub transcript_digest: Vec<B::V>,
-// }
 
 impl<F: FiniteRing, B: Backend<F>> ZKBooEachProof<F, B> {
     pub fn verify_each(
@@ -171,22 +158,21 @@ impl<F: FiniteRing, B: Backend<F>> ZKBooEachProof<F, B> {
         back: &mut B,
         circuit: &Circuit<F>,
         expected_outputs: &[B::V],
-        e: u8,
     ) -> Result<B::V, B::Error> {
-        assert!(e < 3, "Invalid challenge");
-        let mut self_view = View::<F, B>::new(e, self.e_seed.clone());
+        assert!(self.e < 3, "Invalid challenge");
+        let mut self_view = View::<F, B>::new(self.e, self.e_seed.clone());
         let mut is_valid: <B as Backend<F>>::V = back.constant(&F::one())?;
         for gate in circuit.enumerate_gates().into_iter() {
             match gate.gate_type {
                 GateType::Input(input_idx) => {
-                    if e == 0 {
+                    if self.e == 0 {
                         let self_share_value = back.hash_input_share(&self.e_seed, input_idx)?;
                         self_view.add_input_share(gate.clone(), self_share_value);
                         let next_share_value = back.hash_input_share(&self.e1_seed, input_idx)?;
                         let is_eq =
                             back.eq(&next_share_value, &self.e1_view.wire_shares[&gate.gate_id])?;
                         is_valid = back.mul(&is_valid, &is_eq)?;
-                    } else if e == 1 {
+                    } else if self.e == 1 {
                         let self_share_value = back.hash_input_share(&self.e_seed, input_idx)?;
                         self_view.add_input_share(gate.clone(), self_share_value);
                     } else {
@@ -243,26 +229,206 @@ impl<F: FiniteRing, B: Backend<F>> ZKBooEachProof<F, B> {
 }
 
 #[derive(Debug, Clone)]
+pub struct ZKBooEachProver<F: FiniteRing, H: NativeHasher<F>> {
+    view0: View<F, NativeBackend<F, H>>,
+    view1: View<F, NativeBackend<F, H>>,
+    view2: View<F, NativeBackend<F, H>>,
+}
+
+impl<F: FiniteRing, H: NativeHasher<F>> ZKBooEachProver<F, H> {
+    pub fn new<R: Rng>(rng: &mut R) -> Self {
+        let seed_len = {
+            let ceil = (256 as f64 / F::modulo_bits_size() as f64).ceil();
+            if ceil < 1.0 {
+                1
+            } else {
+                ceil as usize
+            }
+        };
+        let rand_seeds: Vec<Vec<F>> = (0..3)
+            .map(|_| (0..seed_len).map(|_| F::rand(rng)).collect_vec())
+            .collect_vec();
+        Self {
+            view0: View::new(0, rand_seeds[0].clone()),
+            view1: View::new(1, rand_seeds[1].clone()),
+            view2: View::new(2, rand_seeds[2].clone()),
+        }
+    }
+
+    pub fn commit(
+        &mut self,
+        back: &mut NativeBackend<F, H>,
+        circuit: &Circuit<F>,
+        input: &[F],
+    ) -> Result<Vec<F>, NativeError> {
+        let gates = circuit.enumerate_gates();
+        for gate in gates.into_iter() {
+            for player_idx in 0..3 {
+                let (self_view, next_view, next_next_view) = if player_idx == 0 {
+                    (&mut self.view0, &self.view1, &self.view2)
+                } else if player_idx == 1 {
+                    (&mut self.view1, &self.view2, &self.view0)
+                } else {
+                    (&mut self.view2, &self.view0, &self.view1)
+                };
+                match gate.gate_type {
+                    GateType::Input(input_idx) => {
+                        self_view.gen_input_share(
+                            back,
+                            gate.clone(),
+                            &input[input_idx as usize],
+                            next_view,
+                            next_next_view,
+                        )?;
+                    }
+                    GateType::ConstAdd(_) => {
+                        self_view.run_const_add(back, gate.clone())?;
+                    }
+                    GateType::ConstMul(_) => {
+                        self_view.run_const_mul(back, gate.clone())?;
+                    }
+                    GateType::Add => {
+                        self_view.run_add(back, gate.clone())?;
+                    }
+                    GateType::Mul => {
+                        self_view.run_mul(back, gate.clone(), next_view)?;
+                    }
+                }
+            }
+        }
+        let mut outputs0 = vec![];
+        let mut outputs1 = vec![];
+        let mut outputs2 = vec![];
+        for output_gate_id in circuit.output_ids.iter() {
+            outputs0.push(self.view0.wire_shares[output_gate_id].clone());
+            outputs1.push(self.view1.wire_shares[output_gate_id].clone());
+            outputs2.push(self.view2.wire_shares[output_gate_id].clone());
+        }
+        let commit0 = self.view0.commit_view(back)?;
+        let commit1 = self.view1.commit_view(back)?;
+        let commit2 = self.view2.commit_view(back)?;
+        let transcript_digest = back.hash_each_transcript(
+            &[outputs0, outputs1, outputs2, commit0, commit1, commit2].concat(),
+        )?;
+        Ok(transcript_digest)
+    }
+
+    pub fn response(
+        &mut self,
+        back: &mut NativeBackend<F, H>,
+        transcript_digest: Vec<F>,
+        e: u8,
+    ) -> Result<ZKBooEachProof<F, NativeBackend<F, H>>, NativeError> {
+        debug_assert!(e < 3, "Invalid challenge");
+        let e2_commit = if e == 0 {
+            self.view2.commit_view(back)?
+        } else if e == 1 {
+            self.view0.commit_view(back)?
+        } else {
+            self.view1.commit_view(back)?
+        };
+        let e1_view = if e == 0 {
+            &self.view1
+        } else if e == 1 {
+            &self.view2
+        } else {
+            &self.view0
+        };
+        let e_seed = if e == 0 {
+            self.view0.rand_seed()
+        } else if e == 1 {
+            self.view1.rand_seed()
+        } else {
+            self.view2.rand_seed()
+        };
+        let e1_seed = if e == 0 {
+            self.view1.rand_seed()
+        } else if e == 1 {
+            self.view2.rand_seed()
+        } else {
+            self.view0.rand_seed()
+        };
+        let proof = ZKBooEachProof {
+            e2_commitment: e2_commit,
+            e,
+            e1_view: e1_view.clone(),
+            e_seed: e_seed.to_vec(),
+            e1_seed: e1_seed.to_vec(),
+            transcript_digest,
+        };
+        Ok(proof)
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct ZKBooProof<F: FiniteRing, B: Backend<F>> {
     pub each_proof: Vec<ZKBooEachProof<F, B>>,
 }
 
-// impl<F: FiniteRing, B: Backend<F>> ZKBooProof<F, B> {
-//     pub fn verify(
-//         &self,
-//         secpar: u8,
-//         back: &mut B,
-//         circuit: &Circuit<F>,
-//         expected_outputs: &[B::V],
-//     ) -> Result<B::V, B::Error> {
-//         let mut is_valid: <B as Backend<F>>::V = back.constant(&F::one())?;
-//         for (e, each_proof) in self.each_proof.iter().enumerate() {
-//             let is_valid_e = each_proof.verify_each(back, circuit, expected_outputs, e as u8)?;
-//             is_valid = back.mul(&is_valid, &is_valid_e)?;
-//         }
-//         Ok(is_valid)
-//     }
-// }
+impl<F: FiniteRing, B: Backend<F>> ZKBooProof<F, B> {
+    pub fn verify_final(&self, secpar: u8, back: &mut B) -> Result<B::V, B::Error> {
+        let num_repeat = compute_num_repeat(secpar);
+        debug_assert_eq!(self.each_proof.len(), num_repeat as usize);
+        let mut challenge_inputs = vec![];
+        for proof in self.each_proof.iter() {
+            for v in proof.transcript_digest.iter() {
+                back.expose_value(v)?;
+                challenge_inputs.push(v.clone());
+            }
+        }
+        let challenge = back.hash_challenge(&challenge_inputs)?;
+        let challenge_ternarys = challenge
+            .into_iter()
+            .flat_map(|c| back.to_ternarys_le(&c))
+            .collect_vec();
+        let mut is_valid: <B as Backend<F>>::V = back.constant(&F::one())?;
+        debug_assert!(challenge_ternarys.len() > num_repeat as usize);
+        for idx in 0..num_repeat {
+            let e_proof = back.load_value(&F::from(self.each_proof[idx as usize].e as u32))?;
+            back.expose_value(&e_proof)?;
+            let is_eq = back.eq(&e_proof, &challenge_ternarys[idx as usize])?;
+            is_valid = back.mul(&is_valid, &is_eq)?;
+        }
+        Ok(is_valid)
+    }
+}
+
+pub fn zkboo_prove<F: FiniteRing, H: NativeHasher<F>, R: Rng>(
+    secpar: u8,
+    rng: &mut R,
+    back: &mut NativeBackend<F, H>,
+    circuit: Circuit<F>,
+    input: Vec<F>,
+) -> Result<ZKBooProof<F, NativeBackend<F, H>>, NativeError> {
+    let num_repeat = compute_num_repeat(secpar);
+    let mut provers = vec![];
+    let mut transcript_digests = vec![];
+    for _ in 0..num_repeat {
+        let mut prover = ZKBooEachProver::new(rng);
+        let transcript_digest = prover.commit(back, &circuit, &input)?;
+        transcript_digests.push(transcript_digest);
+        provers.push(prover);
+    }
+    let challenge_inputs = transcript_digests.iter().cloned().flatten().collect_vec();
+    let challenge = back.hash_challenge(&challenge_inputs)?;
+    let challenge_ternarys = challenge
+        .into_iter()
+        .flat_map(|c| back.to_ternarys_le(&c))
+        .collect_vec();
+    let mut each_proof = vec![];
+    for idx in 0..num_repeat {
+        let e: u8 = challenge_ternarys[idx as usize].get_first_byte();
+        let proof =
+            provers[idx as usize].response(back, transcript_digests[idx as usize].clone(), e)?;
+        each_proof.push(proof);
+    }
+    Ok(ZKBooProof { each_proof })
+}
+
+fn compute_num_repeat(secpar: u8) -> u8 {
+    let denom = (3f64.log2() - 1.0).ceil();
+    (secpar as f64 / denom).ceil() as u8
+}
 
 // pub fn zkboo_prove<F:FiniteRing, H:NativeHasher<F>>(
 //     secpar: u8,
@@ -270,13 +436,14 @@ pub struct ZKBooProof<F: FiniteRing, B: Backend<F>> {
 
 // )
 
-// #[derive(Debug, Clone)]
-// pub struct ZKBooProver<F: FiniteRing, H: NativeHasher<F>> {
-//     _f: PhantomData<F>,
-//     _h: PhantomData<H>,
-// }
+// fn zkboo_prove_each<F: FiniteRing, H: NativeHasher<F>, R:Rng>(
+//     secpar: u8,
+//     back: &mut NativeBackend<F, H>,
+//     circuit: Circuit<F>,
+//     input: Vec<F>,
+//     rng: &mut R
+// ) -> ZKBooEachProof<F, >
 
-// impl<F: FiniteRing, H: NativeHasher<F>> ZKBooProver<F, H> {
 //     pub fn prove<R: Rng>(
 //         back: &mut NativeBackend<F, H>,
 //         circuit: Circuit<F>,

@@ -10,7 +10,7 @@ pub trait Backend<F: FiniteRing>: Debug + Clone + Sized + Default {
     type Error: std::error::Error;
 
     fn new(hasher_prefix: Vec<F>) -> Result<Self, Self::Error>;
-    fn load_value(&mut self, a: &Self::V) -> Result<(), Self::Error>;
+    fn load_value(&mut self, a: &F) -> Result<Self::V, Self::Error>;
     fn expose_value(&mut self, a: &Self::V) -> Result<(), Self::Error>;
     fn constant(&mut self, a: &F) -> Result<Self::V, Self::Error>;
     fn add(&mut self, a: &Self::V, b: &Self::V) -> Result<Self::V, Self::Error>;
@@ -18,6 +18,7 @@ pub trait Backend<F: FiniteRing>: Debug + Clone + Sized + Default {
     fn sub(&mut self, a: &Self::V, b: &Self::V) -> Result<Self::V, Self::Error>;
     fn neg(&mut self, a: &Self::V) -> Result<Self::V, Self::Error>;
     fn eq(&mut self, a: &Self::V, b: &Self::V) -> Result<Self::V, Self::Error>;
+    fn to_ternarys_le(&mut self, a: &Self::V) -> Vec<Self::V>;
     // fn mod_const(&mut self, a: &Self::V, n: u8) -> Result<Self::V, Self::Error>;
 
     fn zero(&mut self) -> Result<Self::V, Self::Error> {

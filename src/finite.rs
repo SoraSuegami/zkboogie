@@ -1,22 +1,23 @@
 use std::ops::{Add, Mul, Sub};
 
-use ark_ff::biginteger::*;
-use ark_ff::{Field, PrimeField};
+use ark_ff::{biginteger::*, Zero};
+use ark_ff::{Field, FpParameters, PrimeField};
 use arkworks_native_gadgets::ark_std::rand::Rng;
-// pub use num_bigint::*;
+pub use num_bigint::*;
 pub trait FiniteRing:
     Clone + Copy + PartialEq + Eq + std::fmt::Debug + From<u32> + Default
 {
     // fn modulo() -> BigInt;
     fn zero() -> Self;
     fn one() -> Self;
-    // fn value(&self) -> &BigInt;
     fn add(&self, other: &Self) -> Self;
     fn mul(&self, other: &Self) -> Self;
     fn sub(&self, other: &Self) -> Self;
     fn neg(&self) -> Self;
     fn rand<R: Rng>(rng: &mut R) -> Self;
     fn modulo_bits_size() -> u32;
+    fn to_ternarys_le(&self) -> Vec<u8>;
+    fn get_first_byte(&self) -> u8;
 }
 
 pub trait FiniteField: FiniteRing {
@@ -25,15 +26,15 @@ pub trait FiniteField: FiniteRing {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Fp<F: Field>(pub F);
+pub struct Fp<F: PrimeField>(pub F);
 
-impl<F: Field> From<u32> for Fp<F> {
+impl<F: PrimeField> From<u32> for Fp<F> {
     fn from(value: u32) -> Self {
         Fp(F::from(value))
     }
 }
 
-impl<F: Field> FiniteRing for Fp<F> {
+impl<F: PrimeField> FiniteRing for Fp<F> {
     fn zero() -> Self {
         let value = F::zero();
         Self(value)
@@ -70,17 +71,34 @@ impl<F: Field> FiniteRing for Fp<F> {
     }
 
     fn modulo_bits_size() -> u32 {
-        F::BasePrimeField::MODULUS_BIT_SIZE
+        F::Params::MODULUS_BITS
+    }
+
+    fn to_ternarys_le(&self) -> Vec<u8> {
+        let mut ternarys = Vec::new();
+        let mut value: BigUint = self.0.into_repr().try_into().unwrap();
+        let three = BigUint::from(3u8);
+        while value > BigUint::zero() {
+            let ternary = (&value % &three).to_bytes_le()[0];
+            ternarys.push(ternary);
+            value /= &three;
+        }
+        ternarys
+    }
+
+    fn get_first_byte(&self) -> u8 {
+        let bytes = self.0.into_repr().to_bytes_le();
+        bytes[0]
     }
 }
 
-impl<F: Field> Default for Fp<F> {
+impl<F: PrimeField> Default for Fp<F> {
     fn default() -> Self {
         Self::zero()
     }
 }
 
-impl<F: Field> Fp<F> {
+impl<F: PrimeField> Fp<F> {
     pub fn new(value: F) -> Self {
         Fp(value)
     }

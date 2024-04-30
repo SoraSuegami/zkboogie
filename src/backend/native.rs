@@ -1,3 +1,4 @@
+pub(crate) mod poseidon254_native;
 use itertools::Itertools;
 use thiserror::Error;
 
@@ -31,8 +32,8 @@ impl<F: FiniteRing, H: NativeHasher<F>> Backend<F> for NativeBackend<F, H> {
         })
     }
 
-    fn load_value(&mut self, a: &Self::V) -> Result<(), Self::Error> {
-        Ok(())
+    fn load_value(&mut self, a: &F) -> Result<Self::V, Self::Error> {
+        Ok(a.clone())
     }
 
     fn expose_value(&mut self, a: &Self::V) -> Result<(), Self::Error> {
@@ -61,6 +62,11 @@ impl<F: FiniteRing, H: NativeHasher<F>> Backend<F> for NativeBackend<F, H> {
 
     fn eq(&mut self, a: &Self::V, b: &Self::V) -> Result<Self::V, Self::Error> {
         Ok(if a == b { F::one() } else { F::zero() })
+    }
+
+    fn to_ternarys_le(&mut self, a: &Self::V) -> Vec<Self::V> {
+        let bytes = a.to_ternarys_le();
+        bytes.into_iter().map(|b| F::from(b as u32)).collect()
     }
 
     fn hash_input_share(
