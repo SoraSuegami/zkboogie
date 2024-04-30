@@ -149,6 +149,7 @@ pub struct ZKBooEachProof<F: FiniteRing, B: Backend<F>> {
     pub e1_view: View<F, B>,
     pub e_seed: Vec<B::V>,
     pub e1_seed: Vec<B::V>,
+    pub third_input_shares: Vec<B::V>,
     pub transcript_digest: Vec<B::V>,
 }
 
@@ -176,6 +177,10 @@ impl<F: FiniteRing, B: Backend<F>> ZKBooEachProof<F, B> {
                         let self_share_value = back.hash_input_share(&self.e_seed, input_idx)?;
                         self_view.add_input_share(gate.clone(), self_share_value);
                     } else {
+                        self_view.add_input_share(
+                            gate.clone(),
+                            self.third_input_shares[input_idx as usize].clone(),
+                        );
                         let next_share_value = back.hash_input_share(&self.e1_seed, input_idx)?;
                         let is_eq =
                             back.eq(&next_share_value, &self.e1_view.wire_shares[&gate.gate_id])?;
@@ -214,12 +219,23 @@ impl<F: FiniteRing, B: Backend<F>> ZKBooEachProof<F, B> {
         let e_commit = self_view.commit_view(back)?;
         let e1_commit = self.e1_view.commit_view(back)?;
         let e2_commit = self.e2_commitment.clone();
-        let transcript_digest = back.hash_each_transcript(
-            &[
+        let transcript_input = if self.e == 0 {
+            [
                 e_outputs, e1_outputs, e2_outputs, e_commit, e1_commit, e2_commit,
             ]
-            .concat(),
-        )?;
+            .concat()
+        } else if self.e == 1 {
+            [
+                e2_outputs, e_outputs, e1_outputs, e2_commit, e_commit, e1_commit,
+            ]
+            .concat()
+        } else {
+            [
+                e1_outputs, e2_outputs, e_outputs, e1_commit, e2_commit, e_commit,
+            ]
+            .concat()
+        };
+        let transcript_digest = back.hash_each_transcript(&transcript_input)?;
         for (given_v, self_v) in self.transcript_digest.iter().zip(transcript_digest.iter()) {
             let is_eq = back.eq(given_v, self_v)?;
             is_valid = back.mul(&is_valid, &is_eq)?;
@@ -307,15 +323,15 @@ impl<F: FiniteRing, H: NativeHasher<F>> ZKBooEachProver<F, H> {
         let commit0 = self.view0.commit_view(back)?;
         let commit1 = self.view1.commit_view(back)?;
         let commit2 = self.view2.commit_view(back)?;
-        let transcript_digest = back.hash_each_transcript(
-            &[outputs0, outputs1, outputs2, commit0, commit1, commit2].concat(),
-        )?;
+        let transcript_input = [outputs0, outputs1, outputs2, commit0, commit1, commit2].concat();
+        let transcript_digest = back.hash_each_transcript(&transcript_input)?;
         Ok(transcript_digest)
     }
 
     pub fn response(
         &mut self,
         back: &mut NativeBackend<F, H>,
+        circuit: &Circuit<F>,
         transcript_digest: Vec<F>,
         e: u8,
     ) -> Result<ZKBooEachProof<F, NativeBackend<F, H>>, NativeError> {
@@ -348,12 +364,18 @@ impl<F: FiniteRing, H: NativeHasher<F>> ZKBooEachProver<F, H> {
         } else {
             self.view0.rand_seed()
         };
+        let third_input_shares = circuit
+            .input_ids
+            .iter()
+            .map(|input_id| self.view2.wire_shares[input_id])
+            .collect_vec();
         let proof = ZKBooEachProof {
             e2_commitment: e2_commit,
             e,
             e1_view: e1_view.clone(),
             e_seed: e_seed.to_vec(),
             e1_seed: e1_seed.to_vec(),
+            third_input_shares,
             transcript_digest,
         };
         Ok(proof)
@@ -393,12 +415,33 @@ impl<F: FiniteRing, B: Backend<F>> ZKBooProof<F, B> {
     }
 }
 
+impl<F: FiniteRing, H: NativeHasher<F>> ZKBooProof<F, NativeBackend<F, H>> {
+    pub fn verify_whole(
+        &self,
+        secpar: u8,
+        back: &mut NativeBackend<F, H>,
+        circuit: &Circuit<F>,
+        expected_output: &[F],
+    ) -> Result<bool, NativeError> {
+        let num_repeat = compute_num_repeat(secpar);
+        debug_assert_eq!(self.each_proof.len(), num_repeat as usize);
+        for proof in self.each_proof.iter() {
+            let is_valid = proof.verify_each(back, circuit, expected_output)?;
+            if is_valid != F::one() {
+                return Ok(false);
+            }
+        }
+        let is_final_valid = self.verify_final(secpar, back)?;
+        Ok(is_final_valid == F::one())
+    }
+}
+
 pub fn zkboo_prove<F: FiniteRing, H: NativeHasher<F>, R: Rng>(
     secpar: u8,
     rng: &mut R,
     back: &mut NativeBackend<F, H>,
-    circuit: Circuit<F>,
-    input: Vec<F>,
+    circuit: &Circuit<F>,
+    input: &[F],
 ) -> Result<ZKBooProof<F, NativeBackend<F, H>>, NativeError> {
     let num_repeat = compute_num_repeat(secpar);
     let mut provers = vec![];
@@ -418,8 +461,12 @@ pub fn zkboo_prove<F: FiniteRing, H: NativeHasher<F>, R: Rng>(
     let mut each_proof = vec![];
     for idx in 0..num_repeat {
         let e: u8 = challenge_ternarys[idx as usize].get_first_byte();
-        let proof =
-            provers[idx as usize].response(back, transcript_digests[idx as usize].clone(), e)?;
+        let proof = provers[idx as usize].response(
+            back,
+            circuit,
+            transcript_digests[idx as usize].clone(),
+            e,
+        )?;
         each_proof.push(proof);
     }
     Ok(ZKBooProof { each_proof })
@@ -510,3 +557,39 @@ fn compute_num_repeat(secpar: u8) -> u8 {
 //         zkboo
 //     }
 // }
+
+#[cfg(test)]
+mod test {
+    use self::{circuit::CircuitBuilder, finite::Fp, poseidon254_native::Poseidon254Native};
+    use super::*;
+    use ark_std::*;
+
+    type F = Fp<ark_bn254::Fr>;
+
+    #[test]
+    fn test_add2_mul() {
+        let mut circuit_builder = CircuitBuilder::<F>::new();
+        let inputs = circuit_builder.inputs(3);
+        let add1 = circuit_builder.add(&inputs[0], &inputs[1]);
+        let add2 = circuit_builder.add(&inputs[1], &inputs[2]);
+        let mul = circuit_builder.mul(&add1, &add2);
+        let circuit = circuit_builder.output(&[mul]);
+
+        let mut rng: rand::prelude::StdRng = ark_std::test_rng();
+        let inputs = vec![F::rand(&mut rng), F::rand(&mut rng), F::rand(&mut rng)];
+        let expected_output = {
+            let add1 = inputs[0].add(&inputs[1]);
+            let add2 = inputs[1].add(&inputs[2]);
+            let mul = add1.mul(&add2);
+            vec![mul]
+        };
+
+        let hasher_prefix = vec![];
+        let mut back = NativeBackend::<F, Poseidon254Native>::new(hasher_prefix).unwrap();
+        let proof = zkboo_prove(2, &mut rng, &mut back, &circuit, &inputs).unwrap();
+        let is_valid = proof
+            .verify_whole(2, &mut back, &circuit, &expected_output)
+            .unwrap();
+        assert!(is_valid);
+    }
+}

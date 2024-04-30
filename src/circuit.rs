@@ -166,17 +166,20 @@ impl<F: FiniteRing> CircuitBuilder<F> {
         }
     }
 
-    pub fn inputs(&mut self, num_inputs: usize) {
+    pub fn inputs(&mut self, num_inputs: usize) -> Vec<GateId> {
         debug_assert_eq!(self.input_ids.len(), 0);
         debug_assert_eq!(self.gates.len(), 0);
         let gate_ids = (0..num_inputs)
             .map(|idx| GateId::new(idx as u32))
             .collect_vec();
+        let mut inputs = vec![];
         for id in &gate_ids {
             self.input_ids.push(*id);
             let input_gate = Gate::new(GateType::Input::<F>(id.0), *id, vec![]);
             self.gates.insert(*id, input_gate);
+            inputs.push(*id);
         }
+        inputs
     }
 
     pub fn output(mut self, output_ids: &[GateId]) -> Circuit<F> {

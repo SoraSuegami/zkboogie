@@ -1,4 +1,5 @@
 pub(crate) mod poseidon254_native;
+use arkworks_native_gadgets::poseidon::PoseidonError;
 use itertools::Itertools;
 use thiserror::Error;
 
@@ -7,7 +8,10 @@ use crate::finite::*;
 use crate::*;
 
 #[derive(Error, Debug)]
-pub enum NativeError {}
+pub enum NativeError {
+    #[error(transparent)]
+    Poseidon(PoseidonError),
+}
 
 pub trait NativeHasher<F: FiniteRing>: Debug + Clone + Default {
     fn new() -> Self;
