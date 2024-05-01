@@ -140,6 +140,13 @@ impl<F: FiniteRing, B: Backend<F>> View<F, B> {
         self.wire_shares.insert(gate.gate_id, new_value);
         Ok(())
     }
+
+    pub fn run_neg(&mut self, back: &mut B, gate: Gate<F>) -> Result<(), B::Error> {
+        let value = &self.wire_shares[&gate.inputs[0]];
+        let new_value = back.neg(&value)?;
+        self.wire_shares.insert(gate.gate_id, new_value);
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -198,6 +205,9 @@ impl<F: FiniteRing, B: Backend<F>> ZKBooEachProof<F, B> {
                 }
                 GateType::Mul => {
                     self_view.run_mul(back, gate.clone(), &self.e1_view)?;
+                }
+                GateType::Neg => {
+                    self_view.run_neg(back, gate.clone())?;
                 }
             }
         }
@@ -308,6 +318,9 @@ impl<F: FiniteRing, H: NativeHasher<F>> ZKBooEachProver<F, H> {
                     }
                     GateType::Mul => {
                         self_view.run_mul(back, gate.clone(), next_view)?;
+                    }
+                    GateType::Neg => {
+                        self_view.run_neg(back, gate.clone())?;
                     }
                 }
             }
@@ -477,93 +490,14 @@ fn compute_num_repeat(secpar: u8) -> u8 {
     (secpar as f64 / denom).ceil() as u8
 }
 
-// pub fn zkboo_prove<F:FiniteRing, H:NativeHasher<F>>(
-//     secpar: u8,
-//     back: &mut NativeBackend<F, NativeBackend<F, H>>,
-
-// )
-
-// fn zkboo_prove_each<F: FiniteRing, H: NativeHasher<F>, R:Rng>(
-//     secpar: u8,
-//     back: &mut NativeBackend<F, H>,
-//     circuit: Circuit<F>,
-//     input: Vec<F>,
-//     rng: &mut R
-// ) -> ZKBooEachProof<F, >
-
-//     pub fn prove<R: Rng>(
-//         back: &mut NativeBackend<F, H>,
-//         circuit: Circuit<F>,
-//         input: Vec<F>,
-//         rng: &mut R,
-//     ) -> ZKBooProver<F, NativeBackend<F, H>> {
-//         let seed_len = {
-//             let ceil = (256 as f64 / F::modulo_bits_size() as f64).ceil();
-//             if ceil < 1.0 {
-//                 1
-//             } else {
-//                 ceil as usize
-//             }
-//         };
-//         let rand_seeds: Vec<Vec<F>> = (0..3)
-//             .map(|_| (0..seed_len).map(|_| F::rand(rng)).collect_vec())
-//             .collect_vec();
-//         let views = (0..3)
-//             .map(|idx| View::<F, NativeBackend<F, H>>::new(idx as u8, rand_seeds[idx]))
-//             .collect_vec();
-//         let gates = circuit.enumerate_gates();
-//         for gate in gates.into_iter() {
-//             match gate.gate_type {
-//                 GateType::Input(input_idx) => {
-//                     for view in &mut views {
-//                         let player_idx = view.player_idx as usize;
-//                         view.add_input_share(
-//                             &mut back,
-//                             gate,
-//                             &input[input_idx as usize],
-//                             &mut views[(player_idx + 1) % 3],
-//                             &mut views[(player_idx + 2) % 3],
-//                         );
-//                     }
-//                 }
-//                 GateType::ConstAdd(_) => {
-//                     for view in &mut views {
-//                         view.run_const_add(&mut back, gate);
-//                     }
-//                 }
-//                 GateType::ConstMul(_) => {
-//                     for view in &mut views {
-//                         view.run_const_mul(&mut back, gate);
-//                     }
-//                 }
-//                 GateType::Add => {
-//                     for view in &mut views {
-//                         view.run_add(&mut back, gate);
-//                     }
-//                 }
-//                 GateType::Mul => {
-//                     for view in &mut views {
-//                         let player_idx = view.player_idx as usize;
-//                         view.run_mul(&mut back, gate, &views[(player_idx + 1) % 3]);
-//                     }
-//                 }
-//             }
-//         }
-//         let zkboo = ZKBooProver {
-//             views,
-//             circuit,
-//             input,
-//         };
-//         zkboo
-//     }
-// }
-
 #[cfg(test)]
 mod test {
     use self::{circuit::CircuitBuilder, finite::Fp, poseidon254_native::Poseidon254Native};
+    use super::frontend::{
+        build_circuit_from_circom, gen_circom_circuit_inputs, gen_circom_circuit_outputs,
+    };
     use super::*;
     use ark_std::*;
-
     type F = Fp<ark_bn254::Fr>;
 
     #[test]
@@ -628,6 +562,38 @@ mod test {
         let mut back = NativeBackend::<F, Poseidon254Native>::new(hasher_prefix).unwrap();
         let prove_time = start_timer!(|| "Proving");
         let proof = zkboo_prove(secpar, &mut rng, &mut back, &circuit, &inputs).unwrap();
+        end_timer!(prove_time);
+        let is_valid = proof
+            .verify_whole(secpar, &mut back, &circuit, &expected_output)
+            .unwrap();
+        assert!(is_valid);
+    }
+
+    #[test]
+    fn test_circom_test1() {
+        let r1cs_path = "./test_circom/test1.r1cs";
+        let wasm_path = "./test_circom/test1_js/test1.wasm";
+
+        let circuit = build_circuit_from_circom(r1cs_path, wasm_path).unwrap();
+        let mut rng = ark_std::test_rng();
+        let inputs = (0..circuit.num_inputs())
+            .map(|_| F::rand(&mut rng))
+            .collect_vec();
+        let public_output = inputs[0].mul(&inputs[1]);
+        let expected_output =
+            gen_circom_circuit_outputs(r1cs_path, wasm_path, vec![], vec![public_output]).unwrap();
+        let circuit_inputs = gen_circom_circuit_inputs(
+            r1cs_path,
+            wasm_path,
+            vec![("a", inputs[0].clone()), ("b", inputs[1])],
+        )
+        .unwrap();
+
+        let secpar = 100;
+        let hasher_prefix = vec![];
+        let mut back = NativeBackend::<F, Poseidon254Native>::new(hasher_prefix).unwrap();
+        let prove_time = start_timer!(|| "Proving");
+        let proof = zkboo_prove(secpar, &mut rng, &mut back, &circuit, &circuit_inputs).unwrap();
         end_timer!(prove_time);
         let is_valid = proof
             .verify_whole(secpar, &mut back, &circuit, &expected_output)

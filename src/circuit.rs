@@ -2,7 +2,11 @@ use itertools::Itertools;
 
 use self::finite::FiniteRing;
 use crate::*;
-use std::{collections::HashMap, ops::*, vec};
+use std::{
+    collections::{BTreeMap, HashMap},
+    ops::*,
+    vec,
+};
 
 #[derive(Debug, Clone, Copy)]
 pub enum GateType<F: FiniteRing> {
@@ -11,6 +15,7 @@ pub enum GateType<F: FiniteRing> {
     ConstMul(F),
     Add,
     Mul,
+    Neg,
     // Output(u32),
 }
 
@@ -22,6 +27,7 @@ impl<F: FiniteRing> GateType<F> {
             GateType::ConstMul(_) => 2,
             GateType::Add => 3,
             GateType::Mul => 4,
+            GateType::Neg => 5,
             // GateType::Output(_) => 5,
         }
     }
@@ -33,6 +39,7 @@ impl<F: FiniteRing> GateType<F> {
             GateType::ConstMul(_) => 1,
             GateType::Add => 2,
             GateType::Mul => 2,
+            GateType::Neg => 1,
             // GateType::Output(_) => 1,
         }
     }
@@ -44,6 +51,7 @@ impl<F: FiniteRing> GateType<F> {
             GateType::ConstMul(x) => inputs[0].mul(x),
             GateType::Add => inputs[0].add(&inputs[1]),
             GateType::Mul => inputs[0].mul(&inputs[1]),
+            GateType::Neg => inputs[0].neg(),
             // GateType::Output(_) => inputs[0],
         }
     }
@@ -148,6 +156,10 @@ impl<F: FiniteRing> Circuit<F> {
         gates.sort_by_key(|(id, _)| *id);
         gates.into_iter().map(|(_, gate)| gate.clone()).collect()
     }
+
+    pub fn eval(&self, inputs: &[F]) -> Vec<F> {
+        eval_circuit(self, inputs)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -214,4 +226,39 @@ impl<F: FiniteRing> CircuitBuilder<F> {
         self.gates.insert(gate_id, gate);
         gate_id
     }
+
+    pub fn neg(&mut self, input: &GateId) -> GateId {
+        let gate_id = GateId::new(self.gates.len() as u32);
+        let gate = Gate::new(GateType::Neg::<F>, gate_id, vec![*input]);
+        self.gates.insert(gate_id, gate);
+        gate_id
+    }
+
+    pub fn sub(&mut self, input_l: &GateId, input_r: &GateId) -> GateId {
+        let neg = self.neg(input_r);
+        self.add(input_l, &neg)
+    }
+}
+
+fn eval_circuit<F: FiniteRing>(circuit: &Circuit<F>, inputs: &[F]) -> Vec<F> {
+    let mut values = BTreeMap::new();
+    debug_assert_eq!(inputs.len(), circuit.num_inputs());
+    for (idx, input) in inputs.iter().enumerate() {
+        values.insert(circuit.input_id(idx), *input);
+    }
+    let num_inputs = circuit.num_inputs();
+    for gate in circuit.enumerate_gates()[num_inputs..].into_iter() {
+        let inputs = gate
+            .inputs
+            .iter()
+            .map(|input_id| values[input_id])
+            .collect_vec();
+        let value = gate.gate_type.eval(&inputs);
+        values.insert(gate.gate_id, value);
+    }
+    circuit
+        .output_ids
+        .iter()
+        .map(|output_id| values[output_id])
+        .collect_vec()
 }
