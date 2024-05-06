@@ -16,6 +16,7 @@ pub enum GateType<F: FiniteRing> {
     Add,
     Mul,
     Neg,
+    Const(F),
     // Output(u32),
 }
 
@@ -28,6 +29,7 @@ impl<F: FiniteRing> GateType<F> {
             GateType::Add => 3,
             GateType::Mul => 4,
             GateType::Neg => 5,
+            GateType::Const(_) => 6,
             // GateType::Output(_) => 5,
         }
     }
@@ -40,6 +42,7 @@ impl<F: FiniteRing> GateType<F> {
             GateType::Add => 2,
             GateType::Mul => 2,
             GateType::Neg => 1,
+            GateType::Const(_) => 0,
             // GateType::Output(_) => 1,
         }
     }
@@ -52,6 +55,7 @@ impl<F: FiniteRing> GateType<F> {
             GateType::Add => inputs[0].add(&inputs[1]),
             GateType::Mul => inputs[0].mul(&inputs[1]),
             GateType::Neg => inputs[0].neg(),
+            GateType::Const(x) => *x,
             // GateType::Output(_) => inputs[0],
         }
     }
@@ -237,6 +241,13 @@ impl<F: FiniteRing> CircuitBuilder<F> {
     pub fn sub(&mut self, input_l: &GateId, input_r: &GateId) -> GateId {
         let neg = self.neg(input_r);
         self.add(input_l, &neg)
+    }
+
+    pub fn constant(&mut self, constant: F) -> GateId {
+        let gate_id = GateId::new(self.gates.len() as u32);
+        let gate = Gate::new(GateType::Const::<F>(constant), gate_id, vec![]);
+        self.gates.insert(gate_id, gate);
+        gate_id
     }
 }
 

@@ -1,6 +1,17 @@
-pub(crate) mod backend;
-pub(crate) mod circuit;
-pub(crate) mod finite;
-pub(crate) mod frontend;
-pub(crate) mod snark;
-pub(crate) mod zkboo;
+pub mod backend;
+pub mod circuit;
+pub mod finite;
+pub mod frontend;
+pub mod snark;
+pub mod storage;
+pub mod zkboo;
+pub mod zkboogi;
+
+pub use backend::*;
+pub use circuit::*;
+pub use finite::*;
+pub use frontend::*;
+pub use snark::*;
+pub use storage::*;
+pub use zkboo::*;
+pub use zkboogi::*;

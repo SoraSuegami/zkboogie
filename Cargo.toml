@@ -18,7 +18,26 @@ arkworks-utils = { version = "1.0.1", git = "https://github.com/webb-tools/zero-
 ark-bn254 = { version = "^0.3.0", default-features = false, features = [
     "curve",
 ] }
-ark-std = { version = "^0.3.0", default-features = false }
+ark-std = { version = "^0.3.0", features = ["print-trace"] }
 ark-circom = { version = "0.1.0", git = "https://github.com/arkworks-rs/circom-compat.git", rev = "35ce5a9", features = [
     "circom-2",
 ] }
+rayon = "1.10.0"
+petgraph = "0.6.4"
+sha2 = "0.10.8"
+# plonky2 = { version = "0.1.4", git = "https://github.com/0xPolygonZero/plonky2.git", rev = "39a2d62d6d025631380da88aa78c2f8b929852a2" }
+# plonky2_crypto = { version = "0.1.0", git = "https://github.com/SoraSuegami/plonky2-crypto.git", branch = "fix/sha2_padding" }
+
+[dev-dependencies]
+criterion = "0.5.1"
+serde_json = "1.0.68"
+
+
+[[bench]]
+name = "many_muls"
+harness = false
+
+
+# [[bench]]
+# name = "circom_twitter"
+# harness = false

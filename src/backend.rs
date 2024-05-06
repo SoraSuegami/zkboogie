@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use crate::*;
-pub(crate) mod native;
+pub mod native;
 
 use self::finite::FiniteRing;
 

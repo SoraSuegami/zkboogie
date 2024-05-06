@@ -1,4 +1,4 @@
-use self::finite::{FiniteRing, Fp};
+use self::finite::{FiniteRing, F256};
 
 use super::{NativeError, NativeHasher};
 use crate::*;
@@ -12,8 +12,9 @@ pub struct Poseidon254Native {
     inner: Poseidon<ark_bn254::Fr>,
 }
 
-impl NativeHasher<Fp<ark_bn254::Fr>> for Poseidon254Native {
+impl NativeHasher<F256<ark_bn254::Fr>> for Poseidon254Native {
     fn new() -> Self {
+        println!("setup poseidon params");
         let pos_data = setup_poseidon_params(Curve::Bn254, 5, 5).unwrap();
         let mds_f = bytes_matrix_to_f(&pos_data.mds);
         let rounds_f = bytes_vec_to_f(&pos_data.rounds);
@@ -25,14 +26,15 @@ impl NativeHasher<Fp<ark_bn254::Fr>> for Poseidon254Native {
             sbox: PoseidonSbox(pos_data.exp),
             width: pos_data.width,
         };
+        println!("setup poseidon params done");
         let inner = Poseidon::new(params);
         Self { inner }
     }
 
     fn hash(
         &self,
-        inputs: &[Fp<ark_bn254::Fr>],
-    ) -> Result<Vec<Fp<ark_bn254::Fr>>, super::NativeError> {
+        inputs: &[F256<ark_bn254::Fr>],
+    ) -> Result<Vec<F256<ark_bn254::Fr>>, super::NativeError> {
         let inputs = inputs.iter().map(|x| x.0).collect::<Vec<_>>();
         let mut last_hash = ark_bn254::Fr::from(0u64);
         for chunk in inputs.chunks(3) {
@@ -43,7 +45,7 @@ impl NativeHasher<Fp<ark_bn254::Fr>> for Poseidon254Native {
                 .hash(&input)
                 .map_err(|err| NativeError::Poseidon(err))?;
         }
-        let output = Fp(last_hash);
+        let output = F256(last_hash);
         Ok(vec![output])
     }
 }
