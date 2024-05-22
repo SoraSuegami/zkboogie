@@ -45,21 +45,24 @@ pub trait Backend<F: FiniteRing>: Debug + Clone + Sized + Default {
         self.sub(&one, &is_eq)
     }
 
-    fn hash_input_share(
-        &mut self,
-        rand_seed: &[Self::V],
-        input_idx: u32,
-    ) -> Result<Self::V, Self::Error>;
-    fn hash_mul_pad(
-        &mut self,
-        rand_seed: &[Self::V],
-        input: &[Self::V],
-    ) -> Result<Self::V, Self::Error>;
-    fn hash_commit(
-        &mut self,
-        rand_seed: &[Self::V],
-        input: &[Self::V],
-    ) -> Result<Vec<Self::V>, Self::Error>;
-    fn hash_each_transcript(&mut self, input: &[Self::V]) -> Result<Vec<Self::V>, Self::Error>;
-    fn hash_challenge(&mut self, input: &[Self::V]) -> Result<Vec<Self::V>, Self::Error>;
+    fn hash_to_one(&mut self, input: &[Self::V]) -> Result<Self::V, Self::Error>;
+    fn hash_to_multi(&mut self, input: &[Self::V]) -> Result<Vec<Self::V>, Self::Error>;
+
+    // fn hash_input_share(
+    //     &mut self,
+    //     rand_seed: &[Self::V],
+    //     input_idx: u32,
+    // ) -> Result<Self::V, Self::Error>;
+    // fn hash_mul_pad(
+    //     &mut self,
+    //     rand_seed: &[Self::V],
+    //     input: &[Self::V],
+    // ) -> Result<Self::V, Self::Error>;
+    // fn hash_commit(
+    //     &mut self,
+    //     rand_seed: &[Self::V],
+    //     input: &[Self::V],
+    // ) -> Result<Vec<Self::V>, Self::Error>;
+    // fn hash_each_transcript(&mut self, input: &[Self::V]) -> Result<Vec<Self::V>, Self::Error>;
+    // fn hash_challenge(&mut self, input: &[Self::V]) -> Result<Vec<Self::V>, Self::Error>;
 }

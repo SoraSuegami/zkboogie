@@ -74,45 +74,57 @@ impl<F: FiniteRing, H: NativeHasher<F>> Backend<F> for NativeBackend<F, H> {
         bytes.into_iter().map(|b| F::from(b as u32)).collect()
     }
 
-    fn hash_input_share(
-        &mut self,
-        rand_seed: &[Self::V],
-        input_idx: u32,
-    ) -> Result<Self::V, Self::Error> {
-        let outputs = self
-            .hasher
-            .hash(&[rand_seed.to_vec(), vec![F::from(input_idx)]].concat())?;
-        Ok(outputs[0])
+    fn hash_to_one(&mut self, input: &[Self::V]) -> Result<Self::V, Self::Error> {
+        let outputs = self.hash_to_multi(input)?;
+        Ok(outputs[0].clone())
     }
 
-    fn hash_mul_pad(
-        &mut self,
-        rand_seed: &[Self::V],
-        input: &[Self::V],
-    ) -> Result<Self::V, Self::Error> {
-        let outputs = self
-            .hasher
-            .hash(&[rand_seed.to_vec(), input.to_vec()].concat())?;
-        Ok(outputs[0])
-    }
-
-    fn hash_commit(
-        &mut self,
-        rand_seed: &[Self::V],
-        input: &[Self::V],
-    ) -> Result<Vec<Self::V>, Self::Error> {
-        let outputs = self
-            .hasher
-            .hash(&[rand_seed.to_vec(), input.to_vec()].concat())?;
+    fn hash_to_multi(&mut self, input: &[Self::V]) -> Result<Vec<Self::V>, Self::Error> {
+        let mut inputs = self.hasher_prefix.clone();
+        inputs.extend(input.to_vec());
+        let outputs = self.hasher.hash(&inputs)?;
         Ok(outputs)
     }
 
-    fn hash_each_transcript(&mut self, input: &[Self::V]) -> Result<Vec<Self::V>, Self::Error> {
-        let outputs = self.hasher.hash(&input)?;
-        Ok(outputs)
-    }
+    // fn hash_input_share(
+    //     &mut self,
+    //     rand_seed: &[Self::V],
+    //     input_idx: u32,
+    // ) -> Result<Self::V, Self::Error> {
+    //     let outputs = self
+    //         .hasher
+    //         .hash(&[rand_seed.to_vec(), vec![F::from(input_idx)]].concat())?;
+    //     Ok(outputs[0])
+    // }
 
-    fn hash_challenge(&mut self, input: &[Self::V]) -> Result<Vec<Self::V>, Self::Error> {
-        self.hasher.hash(&input)
-    }
+    // fn hash_mul_pad(
+    //     &mut self,
+    //     rand_seed: &[Self::V],
+    //     input: &[Self::V],
+    // ) -> Result<Self::V, Self::Error> {
+    //     let outputs = self
+    //         .hasher
+    //         .hash(&[rand_seed.to_vec(), input.to_vec()].concat())?;
+    //     Ok(outputs[0])
+    // }
+
+    // fn hash_commit(
+    //     &mut self,
+    //     rand_seed: &[Self::V],
+    //     input: &[Self::V],
+    // ) -> Result<Vec<Self::V>, Self::Error> {
+    //     let outputs = self
+    //         .hasher
+    //         .hash(&[rand_seed.to_vec(), input.to_vec()].concat())?;
+    //     Ok(outputs)
+    // }
+
+    // fn hash_each_transcript(&mut self, input: &[Self::V]) -> Result<Vec<Self::V>, Self::Error> {
+    //     let outputs = self.hasher.hash(&input)?;
+    //     Ok(outputs)
+    // }
+
+    // fn hash_challenge(&mut self, input: &[Self::V]) -> Result<Vec<Self::V>, Self::Error> {
+    //     self.hasher.hash(&input)
+    // }
 }
