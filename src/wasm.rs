@@ -9,7 +9,18 @@ pub use wasm_bindgen_rayon::init_thread_pool;
 type F = F256<ark_bn254::Fr>;
 use crate::native::poseidon254_native::Poseidon254Native;
 use crate::native::NativeBackend;
+use console_error_panic_hook;
 use itertools::Itertools;
+
+#[wasm_bindgen]
+pub fn init_panic_hook() {
+    console_error_panic_hook::set_once();
+}
+
+#[wasm_bindgen]
+pub fn gen_random_circuit(num_input: u32, num_add: u32, num_mul: u32) -> Vec<u8> {
+    crate::circuit::gen_random_circuit::<F>(num_input, num_add, num_mul)
+}
 
 #[wasm_bindgen]
 pub fn zkboogie_prove_wasm(

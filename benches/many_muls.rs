@@ -24,7 +24,7 @@ fn bench_many_mul_circuit(c: &mut Criterion) {
     let circuit = circuit_builder.output(&[muled]);
     // let mut rng = ark_std::test_rng();
 
-    let secpar = 80;
+    let secpar = 100;
     println!("prover starts");
     let mut group = c.benchmark_group("2^18 multiplication circuit");
     group.sample_size(10);

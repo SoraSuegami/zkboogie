@@ -1,7 +1,7 @@
 mod encode;
 use self::native::{NativeBackend, NativeError, NativeHasher};
 use crate::*;
-use ark_std::{end_timer, start_timer};
+// use ark_std::{end_timer, start_timer};
 use bincode;
 use core::hash;
 pub use encode::*;
@@ -185,11 +185,11 @@ impl<F: FiniteRing, B: Backend<F>> PlayerState<F, B> {
     }
 
     pub fn run_neg(&mut self, back: &mut B, gate: Gate<F>) -> Result<(), B::Error> {
-        let timer = start_timer!(|| "run_neg");
+        // let timer = start_timer!(|| "run_neg");
         let value = &self.wire_shares[&gate.inputs[0]];
         let new_value = back.neg(&value)?;
         self.wire_shares.insert(gate.gate_id, new_value);
-        end_timer!(timer);
+        // end_timer!(timer);
         Ok(())
     }
 
@@ -673,9 +673,9 @@ pub fn zkboogie_prove<F: FiniteRing, H: NativeHasher<F>>(
         .map(|_| {
             let mut prover = ZKBoogieEachProver::new();
             let mut back = NativeBackend::new(hasher_prefix.clone()).unwrap();
-            let timer = start_timer!(|| "commit");
+            // let timer = start_timer!(|| "commit");
             let transcript_digest = prover.commit(&mut back, circuit, input).unwrap();
-            end_timer!(timer);
+            // end_timer!(timer);
             (prover, transcript_digest)
         })
         .collect::<Vec<_>>();
@@ -685,9 +685,9 @@ pub fn zkboogie_prove<F: FiniteRing, H: NativeHasher<F>>(
         .flat_map(|(_, digest)| digest.clone())
         .collect_vec();
     let mut back = NativeBackend::<F, H>::new(hasher_prefix.clone()).unwrap();
-    let challenge_timer = start_timer!(|| "challenge");
+    // let challenge_timer = start_timer!(|| "challenge");
     let challenge = back.hash_to_multi(&challenge_inputs)?;
-    end_timer!(challenge_timer);
+    // end_timer!(challenge_timer);
     let challenge_ternarys = challenge
         .into_iter()
         .flat_map(|c| back.to_ternarys_le(&c))
@@ -697,9 +697,9 @@ pub fn zkboogie_prove<F: FiniteRing, H: NativeHasher<F>>(
         .enumerate()
         .map(|(idx, (mut prover, transcript_digest))| {
             let e: u8 = challenge_ternarys[idx].get_first_byte();
-            let timer = start_timer!(|| "response");
+            // let timer = start_timer!(|| "response");
             let response = prover.response(circuit, e, challenge_inputs[idx]).unwrap();
-            end_timer!(timer);
+            // end_timer!(timer);
             response
         })
         .collect::<Vec<_>>();

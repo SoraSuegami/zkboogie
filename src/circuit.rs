@@ -282,3 +282,40 @@ fn eval_circuit<F: FiniteRing>(circuit: &Circuit<F>, inputs: &[F]) -> Vec<F> {
         .map(|output_id| values[output_id])
         .collect_vec()
 }
+
+pub fn gen_random_circuit<F: FiniteRing>(num_input: u32, num_add: u32, num_mul: u32) -> Vec<u8> {
+    let mut circuit_builder = CircuitBuilder::<F>::new();
+    let inputs = circuit_builder.inputs(num_input as usize);
+    let mut num_used_input = 1;
+    let mut num_used_add = 0;
+    let num_gates = num_add + num_mul;
+    let mut last_input_l = inputs[0];
+    let mut last_input_r = inputs[0];
+    for _ in 0..num_gates {
+        let new_wire = if num_used_add < num_add {
+            num_used_add += 1;
+            circuit_builder.add(&last_input_l, &last_input_r)
+        } else {
+            circuit_builder.mul(&last_input_l, &last_input_r)
+        };
+        last_input_l = if num_used_input < num_input {
+            num_used_input += 1;
+            inputs[num_used_input as usize - 1]
+        } else {
+            new_wire
+        };
+        last_input_r = new_wire;
+    }
+    let circuit = circuit_builder.output(&[last_input_r]);
+    circuit.to_bytes_le()
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_random_circuit() {
+        gen_random_circuit::<F256<ark_bn254::Fr>>(1, 128, 128);
+    }
+}
