@@ -415,6 +415,53 @@ pub fn gen_circom_circuit_outputs<R: Read + Seek>(
     Ok(outputs)
 }
 
+pub fn gen_random_circom_circuit(num_input: u32, num_add: u32, num_mul: u32) -> String {
+    let mut circom_strs = vec![];
+    circom_strs.push(format!("pragma circom 2.0.0;"));
+    circom_strs.push(format!(
+        "template RandomCircuitInput{}Add{}Mul{}() {{",
+        num_input, num_add, num_mul
+    ));
+    circom_strs.push(format!("\tsignal input in[{}];", num_input));
+    circom_strs.push(format!("\tsignal output out;"));
+    let mut num_used_input = 1;
+    let mut num_used_add = 0;
+    let num_gates = num_add + num_mul;
+    let mut last_input_l = "in[0]".to_string();
+    let mut last_input_r = "in[0]".to_string();
+    let mut num_var = 0;
+    for _ in 0..num_gates {
+        let new_var = format!("var{}", num_var);
+        num_var += 1;
+        if num_used_add < num_add {
+            num_used_add += 1;
+            circom_strs.push(format!(
+                "\tsignal {} <== {} + {};",
+                new_var, last_input_l, last_input_r
+            ));
+        } else {
+            circom_strs.push(format!(
+                "\tsignal {} <== {} * {};",
+                new_var, last_input_l, last_input_r
+            ));
+        };
+        last_input_l = if num_used_input < num_input {
+            num_used_input += 1;
+            format!("in[{}]", num_used_input - 1)
+        } else {
+            new_var.clone()
+        };
+        last_input_r = new_var;
+    }
+    circom_strs.push(format!("\tout <== {};", last_input_r));
+    circom_strs.push(format!("}}"));
+    circom_strs.push(format!(
+        "component main = RandomCircuitInput{}Add{}Mul{}();",
+        num_input, num_add, num_mul
+    ));
+    circom_strs.join("\n")
+}
+
 #[cfg(test)]
 mod test {
     use self::{circuit::CircuitBuilder, finite::F256};
@@ -439,5 +486,27 @@ mod test {
         let circuit_inputs = gen_circom_circuit_inputs(witness).unwrap();
         let output = circuit.eval(&circuit_inputs);
         assert_eq!(output, expected_output);
+    }
+
+    #[test]
+    fn test_gen_random_circom_circuit() {
+        let params = [
+            (128, 128, 128),
+            (128, 256, 256),
+            (128, 512, 512),
+            (128, 1024, 1024),
+            (128, 2048, 2048),
+            (128, 4096, 4096),
+            (128, 8192, 8192),
+            (128, 16384, 16384),
+        ];
+        for (num_input, num_add, num_mul) in params.iter() {
+            let circuit = gen_random_circom_circuit(*num_input, *num_add, *num_mul);
+            fs::write(
+                format!("./input{}_add{}_mul{}.circom", num_input, num_add, num_mul),
+                circuit,
+            )
+            .unwrap();
+        }
     }
 }
