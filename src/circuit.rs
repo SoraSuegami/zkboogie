@@ -1,12 +1,11 @@
+mod encode;
+pub use encode::*;
 use itertools::Itertools;
 
 use self::finite::FiniteRing;
 use crate::*;
-use std::{
-    collections::{BTreeMap, HashMap},
-    ops::*,
-    vec,
-};
+use serde::{Deserialize, Serialize};
+use std::{collections::BTreeMap, ops::*, vec};
 
 #[derive(Debug, Clone, Copy)]
 pub enum GateType<F: FiniteRing> {
@@ -61,7 +60,7 @@ impl<F: FiniteRing> GateType<F> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct GateId(pub u32);
 
 impl GateId {
@@ -113,14 +112,14 @@ impl<F: FiniteRing> Gate<F> {
 
 #[derive(Debug, Clone)]
 pub struct Circuit<F: FiniteRing> {
-    pub gates: HashMap<GateId, Gate<F>>,
+    pub gates: BTreeMap<GateId, Gate<F>>,
     pub input_ids: Vec<GateId>,
     pub output_ids: Vec<GateId>,
 }
 
 impl<F: FiniteRing> Circuit<F> {
     pub fn new(
-        gates: HashMap<GateId, Gate<F>>,
+        gates: BTreeMap<GateId, Gate<F>>,
         input_ids: Vec<GateId>,
         output_ids: Vec<GateId>,
     ) -> Self {
@@ -164,11 +163,21 @@ impl<F: FiniteRing> Circuit<F> {
     pub fn eval(&self, inputs: &[F]) -> Vec<F> {
         eval_circuit(self, inputs)
     }
+
+    pub fn to_bytes_le(self) -> Vec<u8> {
+        let encoded: EncodedCircuit = EncodedCircuit::from_raw(self.clone());
+        bincode::serialize(&encoded).unwrap()
+    }
+
+    pub fn from_bytes_le(bytes: &[u8]) -> Self {
+        let encoded: EncodedCircuit = bincode::deserialize(bytes).unwrap();
+        encoded.to_raw()
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct CircuitBuilder<F: FiniteRing> {
-    pub gates: HashMap<GateId, Gate<F>>,
+    pub gates: BTreeMap<GateId, Gate<F>>,
     pub input_ids: Vec<GateId>,
     pub output_ids: Vec<GateId>,
 }
@@ -176,7 +185,7 @@ pub struct CircuitBuilder<F: FiniteRing> {
 impl<F: FiniteRing> CircuitBuilder<F> {
     pub fn new() -> Self {
         Self {
-            gates: HashMap::new(),
+            gates: BTreeMap::new(),
             input_ids: Vec::new(),
             output_ids: Vec::new(),
         }

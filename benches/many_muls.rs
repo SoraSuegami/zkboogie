@@ -7,7 +7,7 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use itertools::Itertools;
 use serde_json;
 use std::str::FromStr;
-use zkboogi_recursion::{
+use zkboogie_recursion::{
     native::{poseidon254_native::Poseidon254Native, sha256_native::Sha256Native, NativeBackend},
     *,
 };
@@ -34,7 +34,7 @@ fn bench_many_mul_circuit(c: &mut Criterion) {
             b.iter(|| {
                 let prove_time = start_timer!(|| "Proving");
                 let _ =
-                    zkboogi_prove::<F, Poseidon254Native>(secpar, vec![], &circuit, &[F::one()])
+                    zkboogie_prove::<F, Poseidon254Native>(secpar, vec![], &circuit, &[F::one()])
                         .unwrap();
                 end_timer!(prove_time);
             })
@@ -42,7 +42,7 @@ fn bench_many_mul_circuit(c: &mut Criterion) {
     );
 
     let proof =
-        zkboogi_prove::<F, Poseidon254Native>(secpar, vec![], &circuit, &[F::one()]).unwrap();
+        zkboogie_prove::<F, Poseidon254Native>(secpar, vec![], &circuit, &[F::one()]).unwrap();
     group.bench_function(
         "verify the zkboogi proof for 2^18 multiplication circuit",
         |b| {

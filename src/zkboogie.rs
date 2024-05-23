@@ -1,9 +1,14 @@
+mod encode;
 use self::native::{NativeBackend, NativeError, NativeHasher};
 use crate::*;
-use ark_std::{end_timer, rand::thread_rng, start_timer};
+use ark_std::{end_timer, start_timer};
+use bincode;
 use core::hash;
+pub use encode::*;
 use itertools::Itertools;
+use rand::thread_rng;
 use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, f64::consts::E};
 
 #[derive(Debug, Clone)]
@@ -232,7 +237,7 @@ impl<F: FiniteRing, B: Backend<F>> PlayerState<F, B> {
 }
 
 #[derive(Debug, Clone)]
-pub struct ZKBoogiEachProof<F: FiniteRing, B: Backend<F>> {
+pub struct ZKBoogieEachProof<F: FiniteRing, B: Backend<F>> {
     pub e: u8,
     pub e_input_shares: Vec<B::V>,
     pub e2_input_commit: B::V,
@@ -247,7 +252,7 @@ pub struct ZKBoogiEachProof<F: FiniteRing, B: Backend<F>> {
     pub transcript_digest: B::V,
 }
 
-impl<F: FiniteRing, B: Backend<F>> ZKBoogiEachProof<F, B> {
+impl<F: FiniteRing, B: Backend<F>> ZKBoogieEachProof<F, B> {
     pub fn verify_each(
         &self,
         back: &mut B,
@@ -418,11 +423,11 @@ impl<F: FiniteRing, B: Backend<F>> ZKBoogiEachProof<F, B> {
 }
 
 #[derive(Debug, Clone)]
-pub struct ZKBooProof<F: FiniteRing, B: Backend<F>> {
-    pub each_proof: Vec<ZKBoogiEachProof<F, B>>,
+pub struct ZKBoogieProof<F: FiniteRing, B: Backend<F>> {
+    pub each_proof: Vec<ZKBoogieEachProof<F, B>>,
 }
 
-impl<F: FiniteRing, B: Backend<F>> ZKBooProof<F, B> {
+impl<F: FiniteRing, B: Backend<F>> ZKBoogieProof<F, B> {
     pub fn verify_final(&self, secpar: u8, back: &mut B) -> Result<B::V, B::Error> {
         let num_repeat = compute_num_repeat(secpar);
         debug_assert_eq!(self.each_proof.len(), num_repeat as usize);
@@ -448,7 +453,17 @@ impl<F: FiniteRing, B: Backend<F>> ZKBooProof<F, B> {
     }
 }
 
-impl<F: FiniteRing, H: NativeHasher<F>> ZKBooProof<F, NativeBackend<F, H>> {
+impl<F: FiniteRing, H: NativeHasher<F>> ZKBoogieProof<F, NativeBackend<F, H>> {
+    pub fn from_bytes_le(bytes: &[u8]) -> Self {
+        let encoded: EncodedZKBoogieProof = bincode::deserialize(&bytes).unwrap();
+        encoded.to_raw()
+    }
+
+    pub fn to_bytes_le(self) -> Vec<u8> {
+        let encoded = EncodedZKBoogieProof::from_raw(self);
+        bincode::serialize(&encoded).unwrap()
+    }
+
     pub fn verify_whole(
         &self,
         secpar: u8,
@@ -479,13 +494,13 @@ impl<F: FiniteRing, H: NativeHasher<F>> ZKBooProof<F, NativeBackend<F, H>> {
 }
 
 #[derive(Debug, Clone)]
-pub struct ZKBoogiEachProver<F: FiniteRing, H: NativeHasher<F>> {
+pub struct ZKBoogieEachProver<F: FiniteRing, H: NativeHasher<F>> {
     view0: PlayerState<F, NativeBackend<F, H>>,
     view1: PlayerState<F, NativeBackend<F, H>>,
     view2: PlayerState<F, NativeBackend<F, H>>,
 }
 
-impl<F: FiniteRing, H: NativeHasher<F>> ZKBoogiEachProver<F, H> {
+impl<F: FiniteRing, H: NativeHasher<F>> ZKBoogieEachProver<F, H> {
     pub fn new() -> Self {
         Self {
             view0: PlayerState::new(0),
@@ -528,7 +543,7 @@ impl<F: FiniteRing, H: NativeHasher<F>> ZKBoogiEachProver<F, H> {
         circuit: &Circuit<F>,
         e: u8,
         transcript_digest: F,
-    ) -> Result<ZKBoogiEachProof<F, NativeBackend<F, H>>, NativeError> {
+    ) -> Result<ZKBoogieEachProof<F, NativeBackend<F, H>>, NativeError> {
         let (e_view, e1_view, e2_view) = match e {
             0 => (self.view0, self.view1, self.view2),
             1 => (self.view1, self.view2, self.view0),
@@ -549,7 +564,7 @@ impl<F: FiniteRing, H: NativeHasher<F>> ZKBoogiEachProver<F, H> {
             .iter()
             .map(|id| e2_view.wire_shares[id])
             .collect_vec();
-        let proof = ZKBoogiEachProof {
+        let proof = ZKBoogieEachProof {
             e,
             e_input_shares,
             e2_input_commit,
@@ -646,17 +661,17 @@ impl<F: FiniteRing, H: NativeHasher<F>> ZKBoogiEachProver<F, H> {
     }
 }
 
-pub fn zkboogi_prove<F: FiniteRing, H: NativeHasher<F>>(
+pub fn zkboogie_prove<F: FiniteRing, H: NativeHasher<F>>(
     secpar: u8,
     hasher_prefix: Vec<F>,
     circuit: &Circuit<F>,
     input: &[F],
-) -> Result<ZKBooProof<F, NativeBackend<F, H>>, NativeError> {
+) -> Result<ZKBoogieProof<F, NativeBackend<F, H>>, NativeError> {
     let num_repeat = compute_num_repeat(secpar);
     let commit_phases = (0..num_repeat)
         .into_par_iter()
         .map(|_| {
-            let mut prover = ZKBoogiEachProver::new();
+            let mut prover = ZKBoogieEachProver::new();
             let mut back = NativeBackend::new(hasher_prefix.clone()).unwrap();
             let timer = start_timer!(|| "commit");
             let transcript_digest = prover.commit(&mut back, circuit, input).unwrap();
@@ -688,7 +703,7 @@ pub fn zkboogi_prove<F: FiniteRing, H: NativeHasher<F>>(
             response
         })
         .collect::<Vec<_>>();
-    Ok(ZKBooProof { each_proof })
+    Ok(ZKBoogieProof { each_proof })
 }
 
 fn rlc<F: FiniteRing, B: Backend<F>>(
@@ -748,9 +763,13 @@ mod test {
         let secpar = 100;
         let hasher_prefix = vec![];
         let prove_time = start_timer!(|| "Proving");
-        let proof =
-            zkboogi_prove::<F, Poseidon254Native>(secpar, hasher_prefix.clone(), &circuit, &inputs)
-                .unwrap();
+        let proof = zkboogie_prove::<F, Poseidon254Native>(
+            secpar,
+            hasher_prefix.clone(),
+            &circuit,
+            &inputs,
+        )
+        .unwrap();
         end_timer!(prove_time);
 
         let is_valid = proof
@@ -790,9 +809,13 @@ mod test {
         let hasher_prefix = vec![];
         // let mut back = NativeBackend::<F, Poseidon254Native>::new(hasher_prefix).unwrap();
         let prove_time = start_timer!(|| "Proving");
-        let proof =
-            zkboogi_prove::<F, Poseidon254Native>(secpar, hasher_prefix.clone(), &circuit, &inputs)
-                .unwrap();
+        let proof = zkboogie_prove::<F, Poseidon254Native>(
+            secpar,
+            hasher_prefix.clone(),
+            &circuit,
+            &inputs,
+        )
+        .unwrap();
         end_timer!(prove_time);
         let is_valid = proof
             .verify_whole(secpar, hasher_prefix, &circuit, &expected_output)

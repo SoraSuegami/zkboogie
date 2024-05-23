@@ -1,9 +1,11 @@
 [package]
-name = "zkboogi-recursion"
+name = "zkboogie-recursion"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 num-bigint = "0.4.0"
@@ -19,14 +21,30 @@ ark-bn254 = { version = "^0.3.0", default-features = false, features = [
     "curve",
 ] }
 ark-std = { version = "^0.3.0", features = ["print-trace"] }
+rayon = "1.10.0"
+sha2 = "0.10.8"
+serde_json = "1.0.117"
+serde = { version = "1.0.202", features = ["derive"] }
+bincode = "1.0"
+rand = "0.8.5"
+hex = "0.4.3"
+
+# plonky2 = { version = "0.1.4", git = "https://github.com/0xPolygonZero/plonky2.git", rev = "39a2d62d6d025631380da88aa78c2f8b929852a2" }
+# plonky2_crypto = { version = "0.1.0", git = "https://github.com/SoraSuegami/plonky2-crypto.git", branch = "fix/sha2_padding" }
+
+[target.'cfg(target_family = "wasm")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+wasm-bindgen = "0.2"
+rayon = "1.8"
+wasm-bindgen-rayon = "1.2"
+js-sys = "0.3"
+
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
 ark-circom = { version = "0.1.0", git = "https://github.com/arkworks-rs/circom-compat.git", rev = "35ce5a9", features = [
     "circom-2",
 ] }
-rayon = "1.10.0"
 petgraph = "0.6.4"
-sha2 = "0.10.8"
-# plonky2 = { version = "0.1.4", git = "https://github.com/0xPolygonZero/plonky2.git", rev = "39a2d62d6d025631380da88aa78c2f8b929852a2" }
-# plonky2_crypto = { version = "0.1.0", git = "https://github.com/SoraSuegami/plonky2-crypto.git", branch = "fix/sha2_padding" }
+
 
 [dev-dependencies]
 criterion = "0.5.1"

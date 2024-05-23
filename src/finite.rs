@@ -3,7 +3,9 @@ use std::ops::{Add, Mul, Sub};
 use ark_ff::{biginteger::*, Zero};
 use ark_ff::{Field, FpParameters, PrimeField};
 use arkworks_native_gadgets::ark_std::rand::Rng;
+use hex;
 pub use num_bigint::*;
+
 pub trait FiniteRing:
     Clone + Copy + PartialEq + Eq + std::fmt::Debug + From<u32> + Default + Send + Sync
 {
@@ -23,6 +25,7 @@ pub trait FiniteRing:
         self.to_bytes_le()[0]
     }
     fn from_bytes_le(bytes: &[u8]) -> Self;
+    fn from_str(s: &str) -> Self;
 }
 
 pub trait FiniteField: FiniteRing {
@@ -108,6 +111,15 @@ impl<F: PrimeField> FiniteRing for F256<F> {
         value.read_le(&mut bytes.to_vec().as_slice()).unwrap();
         let value = F::from_repr(value).unwrap();
         Self(value)
+    }
+
+    fn from_str(s: &str) -> Self {
+        if &s[0..2] != "0x" {
+            panic!("invalid hex prefix");
+        }
+        let mut bytes = hex::decode(&s[2..]).expect("invalid hex string");
+        bytes.reverse();
+        Self::from_bytes_le(&bytes)
     }
 }
 
