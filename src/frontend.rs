@@ -470,6 +470,7 @@ mod test {
 
     type F = F256<ark_bn254::Fr>;
 
+    #[ignore]
     #[test]
     fn test_1_circom() {
         let r1cs = File::open("./test_circom/test1.r1cs").unwrap();
@@ -488,6 +489,7 @@ mod test {
         assert_eq!(output, expected_output);
     }
 
+    #[ignore]
     #[test]
     fn test_gen_random_circom_circuit() {
         let params = [

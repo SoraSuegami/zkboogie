@@ -1,11 +1,12 @@
 use std::fmt::Debug;
 
 use crate::*;
+pub mod ark;
 pub mod native;
 
 use self::finite::FiniteRing;
 
-pub trait Backend<F: FiniteRing>: Debug + Clone + Sized + Default {
+pub trait Backend<F: FiniteRing>: Clone + Sized {
     type V: Debug + Clone;
     type Error: std::error::Error;
 

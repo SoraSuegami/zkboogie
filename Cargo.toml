@@ -9,18 +9,19 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 num-bigint = "0.4.0"
-itertools = "0.12.1"
+itertools = "0.13.0"
 # halo2curves = "0.6.1"
-ark-ff = { version = "^0.3.0", default-features = false }
+ark-ff = { version = "^0.4.0", default-features = false }
 thiserror = "1.0.39"
-arkworks-native-gadgets = { version = "1.2.1", git = "https://github.com/webb-tools/zero-knowledge-gadgets.git" }
-arkworks-utils = { version = "1.0.1", git = "https://github.com/webb-tools/zero-knowledge-gadgets.git", features = [
+arkworks-native-gadgets = { version = "1.2.1", git = "https://github.com/SoraSuegami/zero-knowledge-gadgets.git" }
+arkworks-r1cs-gadgets = { version = "1.2.1", git = "https://github.com/SoraSuegami/zero-knowledge-gadgets.git" }
+arkworks-utils = { version = "1.0.1", git = "https://github.com/SoraSuegami/zero-knowledge-gadgets.git", features = [
     "poseidon_bn254_x5_5",
 ] }
-ark-bn254 = { version = "^0.3.0", default-features = false, features = [
+ark-bn254 = { version = "^0.4.0", default-features = false, features = [
     "curve",
 ] }
-ark-std = { version = "^0.3.0", features = ["print-trace"] }
+ark-std = { version = "^0.4.0", features = ["print-trace"] }
 rayon = "1.10.0"
 sha2 = "0.10.8"
 serde_json = "1.0.117"
@@ -28,7 +29,9 @@ serde = { version = "1.0.202", features = ["derive"] }
 bincode = "1.0"
 rand = "0.8.5"
 hex = "0.4.3"
-
+ark-relations = "0.4.0"
+ark-r1cs-std = "0.4.0"
+folding-schemes = { version = "0.1.0", git = "https://github.com/privacy-scaling-explorations/sonobe.git" }
 # plonky2 = { version = "0.1.4", git = "https://github.com/0xPolygonZero/plonky2.git", rev = "39a2d62d6d025631380da88aa78c2f8b929852a2" }
 # plonky2_crypto = { version = "0.1.0", git = "https://github.com/SoraSuegami/plonky2-crypto.git", branch = "fix/sha2_padding" }
 
@@ -41,7 +44,7 @@ js-sys = "0.3"
 console_error_panic_hook = "0.1.7"
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
-ark-circom = { version = "0.1.0", git = "https://github.com/arkworks-rs/circom-compat.git", rev = "35ce5a9", features = [
+ark-circom = { version = "0.1.0", git = "https://github.com/arkworks-rs/circom-compat.git", features = [
     "circom-2",
 ] }
 petgraph = "0.6.4"

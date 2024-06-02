@@ -1,7 +1,7 @@
 use std::ops::{Add, Mul, Sub};
 
 use ark_ff::{biginteger::*, Zero};
-use ark_ff::{Field, FpParameters, PrimeField};
+use ark_ff::{Field, PrimeField};
 use arkworks_native_gadgets::ark_std::rand::Rng;
 use hex;
 pub use num_bigint::*;
@@ -79,7 +79,7 @@ impl<F: PrimeField> FiniteRing for F256<F> {
     }
 
     fn modulo_bits_size() -> u32 {
-        F::Params::MODULUS_BITS
+        F::MODULUS_BIT_SIZE
     }
 
     fn bytes_size() -> usize {
@@ -88,7 +88,7 @@ impl<F: PrimeField> FiniteRing for F256<F> {
 
     fn to_ternarys_le(&self) -> Vec<u8> {
         let mut ternarys = Vec::new();
-        let mut value: BigUint = self.0.into_repr().try_into().unwrap();
+        let mut value: BigUint = self.0.into_bigint().try_into().unwrap();
         let three = BigUint::from(3u8);
         while value > BigUint::zero() {
             let ternary = (&value % &three).to_bytes_le()[0];
@@ -99,17 +99,17 @@ impl<F: PrimeField> FiniteRing for F256<F> {
     }
 
     fn to_bytes_le(&self) -> Vec<u8> {
-        self.0.into_repr().to_bytes_le()
+        self.0.into_bigint().to_bytes_le()
     }
 
     fn from_bytes_le(bytes: &[u8]) -> Self {
-        let mut value = <F as PrimeField>::BigInt::default();
+        // let mut value = <F as PrimeField>::BigInt::default();
         let mut bytes = bytes.to_vec();
         for _ in 0..(32 - bytes.len()) {
             bytes.push(0);
         }
-        value.read_le(&mut bytes.to_vec().as_slice()).unwrap();
-        let value = F::from_repr(value).unwrap();
+        // value.read_le(&mut bytes.to_vec().as_slice()).unwrap();
+        let value = F::from_le_bytes_mod_order(&bytes);
         Self(value)
     }
 

@@ -13,8 +13,8 @@ pub mod zkboogie;
 pub use backend::*;
 pub use circuit::*;
 pub use finite::*;
-#[cfg(not(target_arch = "wasm32"))]
-pub use frontend::*;
+// #[cfg(not(target_arch = "wasm32"))]
+// pub use frontend::*;
 pub use snark::*;
 pub use storage::*;
 // pub use zkboo::*;
