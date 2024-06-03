@@ -7,7 +7,7 @@ use crate::*;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, ops::*, vec};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GateType<F: FiniteRing> {
     Input(u32),
     ConstAdd(F),
@@ -152,6 +152,13 @@ impl<F: FiniteRing> Circuit<F> {
 
     pub fn gate(&self, gate_id: &GateId) -> &Gate<F> {
         &self.gates[gate_id]
+    }
+
+    pub fn num_mul_gate(&self) -> usize {
+        self.gates
+            .values()
+            .filter(|gate| gate.gate_type == GateType::Mul)
+            .count()
     }
 
     pub fn enumerate_gates(&self) -> Vec<Gate<F>> {

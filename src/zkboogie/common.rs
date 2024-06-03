@@ -419,6 +419,65 @@ impl<F: FiniteRing, B: Backend<F>> ZKBoogieEachProof<F, B> {
 
         Ok(is_valid)
     }
+
+    pub fn to_field_vec(&mut self, circuit: &Circuit<F>) -> Vec<B::V> {
+        let mut vec = vec![];
+        vec.append(&mut self.e_input_shares);
+        vec.push(self.e2_input_commit.clone());
+        vec.push(self.e2_view_commit.clone());
+        vec.push(self.e2_rand_commit.clone());
+        vec.append(&mut self.e2_output_shares);
+        vec.push(self.transcript_digest.clone());
+        let gates = circuit.enumerate_gates();
+        for gate in gates {
+            vec.push(self.e1_wire_shares[&gate.gate_id].clone());
+            if let GateType::Mul = gate.gate_type {
+                vec.push(self.e_rand[&gate.gate_id].clone());
+                vec.push(self.e1_rand[&gate.gate_id].clone());
+            }
+        }
+        vec
+    }
+
+    pub fn from_field_vec(vec: &[B::V], e: u8, circuit: &Circuit<F>) -> Self {
+        let mut iter = vec.iter();
+        let e_input_shares = iter
+            .by_ref()
+            .take(circuit.num_inputs())
+            .cloned()
+            .collect_vec();
+        let e2_input_commit = iter.next().unwrap().clone();
+        let e2_view_commit = iter.next().unwrap().clone();
+        let e2_rand_commit = iter.next().unwrap().clone();
+        let e2_output_shares = iter
+            .by_ref()
+            .take(circuit.num_outputs())
+            .cloned()
+            .collect_vec();
+        let transcript_digest = iter.next().unwrap().clone();
+        let mut e1_wire_shares = BTreeMap::new();
+        let mut e_rand = BTreeMap::new();
+        let mut e1_rand = BTreeMap::new();
+        for gate in circuit.enumerate_gates() {
+            e1_wire_shares.insert(gate.gate_id, iter.next().unwrap().clone());
+            if let GateType::Mul = gate.gate_type {
+                e_rand.insert(gate.gate_id, iter.next().unwrap().clone());
+                e1_rand.insert(gate.gate_id, iter.next().unwrap().clone());
+            }
+        }
+        Self {
+            e,
+            e_input_shares,
+            e2_input_commit,
+            e1_wire_shares,
+            e2_view_commit,
+            e_rand,
+            e1_rand,
+            e2_rand_commit,
+            e2_output_shares,
+            transcript_digest,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

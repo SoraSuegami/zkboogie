@@ -69,6 +69,11 @@ impl<F: FiniteRing, H: NativeHasher<F>> Backend<F> for NativeBackend<F, H> {
         Ok(if a == b { F::one() } else { F::zero() })
     }
 
+    fn force_zero(&mut self, a: &Self::V) -> Result<(), Self::Error> {
+        assert_eq!(a, &F::zero());
+        Ok(())
+    }
+
     fn to_ternarys_le(&mut self, a: &Self::V) -> Vec<Self::V> {
         let bytes = a.to_ternarys_le();
         bytes.into_iter().map(|b| F::from(b as u32)).collect()

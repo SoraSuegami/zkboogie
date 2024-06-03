@@ -19,6 +19,7 @@ pub trait Backend<F: FiniteRing>: Clone + Sized {
     fn sub(&mut self, a: &Self::V, b: &Self::V) -> Result<Self::V, Self::Error>;
     fn neg(&mut self, a: &Self::V) -> Result<Self::V, Self::Error>;
     fn eq(&mut self, a: &Self::V, b: &Self::V) -> Result<Self::V, Self::Error>;
+    fn force_zero(&mut self, a: &Self::V) -> Result<(), Self::Error>;
     fn to_ternarys_le(&mut self, a: &Self::V) -> Vec<Self::V>;
     // fn mod_const(&mut self, a: &Self::V, n: u8) -> Result<Self::V, Self::Error>;
 

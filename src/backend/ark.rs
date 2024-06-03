@@ -103,6 +103,12 @@ impl<H: ArkHasher> Backend<F> for ArkBackend<H> {
         Ok(fields[0].clone())
     }
 
+    fn force_zero(&mut self, a: &Self::V) -> Result<(), Self::Error> {
+        let zero = self.zero()?;
+        a.enforce_equal(&zero)?;
+        Ok(())
+    }
+
     fn to_ternarys_le(&mut self, a: &Self::V) -> Vec<Self::V> {
         let value = a.value().unwrap();
         let mut ternarys_le = F256(value).to_ternarys_le();
