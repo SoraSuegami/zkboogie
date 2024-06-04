@@ -4,7 +4,7 @@ use crate::*;
 use crate::ark::*;
 use ark_bn254::{constraints::GVar, Bn254, Fr, G1Projective as G1};
 use ark_ff::{One, Zero};
-use ark_groth16::{Groth16, ProvingKey, VerifyingKey as G16VerifierKey};
+use ark_groth16::{Groth16, Proof, ProvingKey, VerifyingKey as G16VerifierKey};
 use ark_grumpkin::{constraints::GVar as GVar2, Projective as G2};
 use ark_poly_commit::kzg10::VerifierKey as KZGVerifierKey;
 use ark_relations::r1cs::SynthesisError;
@@ -21,7 +21,8 @@ use folding_schemes::{
         CommitmentScheme,
     },
     folding::nova::{
-        decider_eth::{prepare_calldata, Decider as DeciderEth},
+        self,
+        decider_eth::{prepare_calldata, Decider as DeciderEth, Proof as DeciderProof},
         decider_eth_circuit::DeciderEthCircuit,
         get_r1cs, Nova, ProverParams, VerifierParams,
     },
@@ -140,10 +141,13 @@ pub fn fold_setup(
     secpar: u8,
     circuit: &Circuit<F>,
     hasher_prefix: &[F],
-) -> [(
-    ProverParams<G1, G2, KZG<'static, Bn254>, Pedersen<G2>>,
-    VerifierParams<G1, G2>,
-); 3] {
+) -> (
+    [(
+        ProverParams<G1, G2, KZG<'static, Bn254>, Pedersen<G2>>,
+        VerifierParams<G1, G2>,
+    ); 3],
+    KZGVerifierKey<Bn254>,
+) {
     let f_circuit0 = build_f_circuit(secpar, 0, circuit, hasher_prefix);
     let f_circuit1 = build_f_circuit(secpar, 1, circuit, hasher_prefix);
     let f_circuit2 = build_f_circuit(secpar, 2, circuit, hasher_prefix);
@@ -155,17 +159,50 @@ pub fn fold_setup(
     )
     .unwrap();
     let cs_len = r1cs.A.n_rows;
+    println!("cs_len: {}", cs_len);
     let cf_cs_len = cf_r1cs.A.n_rows;
+    println!("cf_cs_len: {}", cf_cs_len);
     let (kzg_pk, kzg_vk): (KZGProverKey<G1>, KZGVerifierKey<Bn254>) =
         KZG::<Bn254>::setup(&mut rng, cs_len).unwrap();
     let (fs_prover_params0, fs_verifier_params0) = init_nova_ivc_params(f_circuit0, kzg_pk.clone());
     let (fs_prover_params1, fs_verifier_params1) = init_nova_ivc_params(f_circuit1, kzg_pk.clone());
     let (fs_prover_params2, fs_verifier_params2) = init_nova_ivc_params(f_circuit2, kzg_pk.clone());
-    [
-        (fs_prover_params0, fs_verifier_params0),
-        (fs_prover_params1, fs_verifier_params1),
-        (fs_prover_params2, fs_verifier_params2),
-    ]
+    (
+        [
+            (fs_prover_params0, fs_verifier_params0),
+            (fs_prover_params1, fs_verifier_params1),
+            (fs_prover_params2, fs_verifier_params2),
+        ],
+        kzg_vk,
+    )
+}
+
+pub fn decider_setup(
+    secpar: u8,
+    circuit: &Circuit<F>,
+    hasher_prefix: &[F],
+    fold_params: &[(
+        ProverParams<G1, G2, KZG<'static, Bn254>, Pedersen<G2>>,
+        VerifierParams<G1, G2>,
+    ); 3],
+    // fs_prover_params0: &ProverParams<G1, G2, KZG<'static, Bn254>, Pedersen<G2>>,
+    // fs_prover_params1: &ProverParams<G1, G2, KZG<'static, Bn254>, Pedersen<G2>>,
+    // fs_prover_params2: &ProverParams<G1, G2, KZG<'static, Bn254>, Pedersen<G2>>,
+) -> [(ProvingKey<Bn254>, G16VerifierKey<Bn254>); 3] {
+    let f_circuit0 = build_f_circuit(secpar, 0, circuit, hasher_prefix);
+    let f_circuit1 = build_f_circuit(secpar, 1, circuit, hasher_prefix);
+    let f_circuit2 = build_f_circuit(secpar, 2, circuit, hasher_prefix);
+    let state_len = f_circuit0.state_len();
+    let fs_prover_params0 = &fold_params[0].0;
+    let fs_prover_params1 = &fold_params[1].0;
+    let fs_prover_params2 = &fold_params[2].0;
+    let (g16_pk0, g16_vk0) =
+        init_ivc_and_decider_params(f_circuit0, vec![Fr::zero(); state_len], fs_prover_params0);
+    let (g16_pk1, g16_vk1) =
+        init_ivc_and_decider_params(f_circuit1, vec![Fr::zero(); state_len], fs_prover_params1);
+    let (g16_pk2, g16_vk2) =
+        init_ivc_and_decider_params(f_circuit2, vec![Fr::zero(); state_len], fs_prover_params2);
+    [(g16_pk0, g16_vk0), (g16_pk1, g16_vk1), (g16_pk2, g16_vk2)]
 }
 
 pub fn build_f_circuit(
@@ -183,34 +220,34 @@ pub fn build_f_circuit(
     .unwrap()
 }
 
-pub fn fold_proof(
+pub fn fold_prove(
     secpar: u8,
     circuit: &Circuit<F>,
     hasher_prefix: &[F],
     expected_output: &[F],
     proof: &ZKBoogieProof<F, NativeBackend<F, Poseidon254Native>>,
-    fs_params: &[(
+    fold_params: &[(
         ProverParams<G1, G2, KZG<'static, Bn254>, Pedersen<G2>>,
         VerifierParams<G1, G2>,
     ); 3],
-) -> Vec<NOVA> {
+) -> [NOVA; 3] {
     let mut novas = vec![];
     for i in 0..3 {
-        novas.push(fold_proof_one(
+        novas.push(fold_prove_one(
             secpar,
             circuit,
             hasher_prefix,
             expected_output,
             i as u8,
             proof,
-            &fs_params[i].0,
-            fs_params[i].1.clone(),
+            &fold_params[i].0,
+            fold_params[i].1.clone(),
         ));
     }
-    novas
+    novas.try_into().unwrap()
 }
 
-fn fold_proof_one(
+fn fold_prove_one(
     secpar: u8,
     circuit: &Circuit<F>,
     hasher_prefix: &[F],
@@ -288,6 +325,52 @@ fn fold_proof_one(
     nova
 }
 
+pub fn decider_prove(
+    fold_params: &[(
+        ProverParams<G1, G2, KZG<'static, Bn254>, Pedersen<G2>>,
+        VerifierParams<G1, G2>,
+    ); 3],
+    kzg_vk: KZGVerifierKey<Bn254>,
+    decider_params: &[(ProvingKey<Bn254>, G16VerifierKey<Bn254>); 3],
+    novas: [NOVA; 3],
+) -> Vec<DeciderProof<G1, KZG<'static, Bn254>, Groth16<Bn254>>> {
+    let mut proofs = vec![];
+    for i in 0..3 {
+        proofs.push(decider_prove_one(
+            fold_params[i].0.clone(),
+            kzg_vk.clone(),
+            decider_params[i].0.clone(),
+            decider_params[i].1.clone(),
+            novas[i].clone(),
+        ));
+    }
+    proofs
+}
+
+fn decider_prove_one(
+    fs_prover_params: ProverParams<G1, G2, KZG<'static, Bn254>, Pedersen<G2>>,
+    kzg_vk: KZGVerifierKey<Bn254>,
+    g16_pk: ProvingKey<Bn254>,
+    g16_vk: G16VerifierKey<Bn254>,
+    nova: NOVA,
+) -> DeciderProof<G1, KZG<'static, Bn254>, Groth16<Bn254>> {
+    let rng = rand::rngs::OsRng;
+    let proof =
+        DeciderFCircuit::prove((g16_pk, fs_prover_params.cs_params), rng, nova.clone()).unwrap();
+    let verified = DeciderFCircuit::verify(
+        (g16_vk, kzg_vk),
+        nova.i,
+        nova.z_0.clone(),
+        nova.z_i.clone(),
+        &nova.U_i,
+        &nova.u_i,
+        &proof,
+    )
+    .unwrap();
+    assert!(verified);
+    proof
+}
+
 // oritiginal: https://github.com/privacy-scaling-explorations/sonobe/blob/main/examples/utils.rs
 pub(crate) fn init_nova_ivc_params<FC: FCircuit<Fr>>(
     f_circuit: FC,
@@ -322,22 +405,25 @@ pub(crate) fn init_nova_ivc_params<FC: FCircuit<Fr>>(
 }
 
 pub(crate) fn init_ivc_and_decider_params<FC: FCircuit<Fr>>(
-    nova: &Nova<G1, GVar, G2, GVar2, FC, KZG<'static, Bn254>, Pedersen<G2>>,
+    f_circuit: FC,
+    z_0: Vec<Fr>,
+    fs_prover_params: &ProverParams<G1, G2, KZG<'static, Bn254>, Pedersen<G2>>,
 ) -> (ProvingKey<Bn254>, G16VerifierKey<Bn254>) {
     let mut rng = rand::rngs::OsRng;
     // let start = Instant::now();
     // println!("generated Nova folding params: {:?}", start.elapsed());
-    // let z_0 = vec![Fr::zero(); f_circuit.state_len()];
-    // let nova = NOVA::init(fs_prover_params, f_circuit, z_0.clone()).unwrap();
-
+    let nova = Nova::<G1, GVar, G2, GVar2, FC, KZG<'static, Bn254>, Pedersen<G2>>::init(
+        fs_prover_params,
+        f_circuit,
+        z_0,
+    )
+    .unwrap();
     let decider_circuit =
-        DeciderEthCircuit::<G1, GVar, G2, GVar2, KZG<Bn254>, Pedersen<G2>>::from_nova::<FC>(
-            nova.clone(),
-        )
-        .unwrap();
+        DeciderEthCircuit::<G1, GVar, G2, GVar2, KZG<Bn254>, Pedersen<G2>>::from_nova::<FC>(nova)
+            .unwrap();
     // let start = Instant::now();
     let (g16_pk, g16_vk) =
-        Groth16::<Bn254>::circuit_specific_setup(decider_circuit.clone(), &mut rng).unwrap();
+        Groth16::<Bn254>::circuit_specific_setup(decider_circuit, &mut rng).unwrap();
     // println!(
     //     "generated G16 (Decider circuit) params: {:?}",
     //     start.elapsed()

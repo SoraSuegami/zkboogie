@@ -814,4 +814,60 @@ mod test {
             .unwrap();
         assert!(is_valid);
     }
+
+    #[test]
+    fn test_add2_mul_with_recursion() {
+        let mut circuit_builder = CircuitBuilder::<F>::new();
+        let inputs = circuit_builder.inputs(3);
+        let add1 = circuit_builder.add(&inputs[0], &inputs[1]);
+        let add2 = circuit_builder.add(&inputs[1], &inputs[2]);
+        let mul = circuit_builder.mul(&add1, &add2);
+        let circuit = circuit_builder.output(&[mul]);
+
+        let mut rng = ark_std::test_rng();
+        let inputs = vec![F::rand(&mut rng), F::rand(&mut rng), F::rand(&mut rng)];
+        let expected_output = {
+            let add1 = inputs[0].add(&inputs[1]);
+            let add2 = inputs[1].add(&inputs[2]);
+            let mul = add1.mul(&add2);
+            vec![mul]
+        };
+
+        let secpar = 100;
+        let hasher_prefix = vec![];
+        let prove_time = start_timer!(|| "Proving");
+        let proof = zkboogie_prove::<F, Poseidon254Native>(
+            secpar,
+            hasher_prefix.clone(),
+            &circuit,
+            &inputs[..],
+        )
+        .unwrap();
+        end_timer!(prove_time);
+
+        let is_valid = proof
+            .verify_whole(secpar, hasher_prefix.clone(), &circuit, &expected_output)
+            .unwrap();
+        assert!(is_valid);
+
+        let fold_setup_time = start_timer!(|| "Fold Setup");
+        let (fold_params, kzg_vk) = fold_setup(secpar, &circuit, &hasher_prefix);
+        end_timer!(fold_setup_time);
+        let decider_setup_time = start_timer!(|| "Decider Setup");
+        let decider_params = decider_setup(secpar, &circuit, &hasher_prefix, &fold_params);
+        end_timer!(decider_setup_time);
+        let fold_time = start_timer!(|| "Folding");
+        let novas = fold_prove(
+            secpar,
+            &circuit,
+            &hasher_prefix,
+            &expected_output,
+            &proof,
+            &fold_params,
+        );
+        end_timer!(fold_time);
+        let decider_time = start_timer!(|| "Decider");
+        let decider_proofs = decider_prove(&fold_params, kzg_vk, &decider_params, novas);
+        end_timer!(decider_time);
+    }
 }
