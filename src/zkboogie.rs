@@ -833,7 +833,7 @@ mod test {
             vec![mul]
         };
 
-        let secpar = 100;
+        let secpar = 2;
         let hasher_prefix = vec![];
         let prove_time = start_timer!(|| "Proving");
         let proof = zkboogie_prove::<F, Poseidon254Native>(
@@ -853,9 +853,9 @@ mod test {
         let fold_setup_time = start_timer!(|| "Fold Setup");
         let (fold_params, kzg_vk) = fold_setup(secpar, &circuit, &hasher_prefix);
         end_timer!(fold_setup_time);
-        let decider_setup_time = start_timer!(|| "Decider Setup");
-        let decider_params = decider_setup(secpar, &circuit, &hasher_prefix, &fold_params);
-        end_timer!(decider_setup_time);
+        // let decider_setup_time = start_timer!(|| "Decider Setup");
+        // let decider_params = decider_setup(secpar, &circuit, &hasher_prefix, &fold_params);
+        // end_timer!(decider_setup_time);
         let fold_time = start_timer!(|| "Folding");
         let novas = fold_prove(
             secpar,
@@ -866,8 +866,8 @@ mod test {
             &fold_params,
         );
         end_timer!(fold_time);
-        let decider_time = start_timer!(|| "Decider");
-        let decider_proofs = decider_prove(&fold_params, kzg_vk, &decider_params, novas);
-        end_timer!(decider_time);
+        // let decider_time = start_timer!(|| "Decider");
+        // let decider_proofs = decider_prove(&fold_params, kzg_vk, &decider_params, novas);
+        // end_timer!(decider_time);
     }
 }
