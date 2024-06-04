@@ -10,6 +10,8 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 num-bigint = "0.4.0"
 itertools = "0.13.0"
+ark-grumpkin = { version = "0.4.0", features = ["r1cs"] }
+
 # halo2curves = "0.6.1"
 ark-ff = { version = "^0.4.0", default-features = false }
 thiserror = "1.0.39"
@@ -20,6 +22,7 @@ arkworks-utils = { version = "1.0.1", git = "https://github.com/SoraSuegami/zero
 ] }
 ark-bn254 = { version = "^0.4.0", default-features = false, features = [
     "curve",
+    "r1cs",
 ] }
 ark-std = { version = "^0.4.0", features = ["print-trace"] }
 rayon = "1.10.0"
@@ -32,6 +35,14 @@ hex = "0.4.3"
 ark-relations = "0.4.0"
 ark-r1cs-std = "0.4.0"
 folding-schemes = { version = "0.1.0", git = "https://github.com/privacy-scaling-explorations/sonobe.git" }
+ark-poly-commit = "^0.4.0"
+ark-groth16 = { version = "^0.4.0" }
+ark-crypto-primitives = { version = "^0.4.0", default-features = false, features = [
+    "r1cs",
+    "sponge",
+    "crh",
+] }
+
 # plonky2 = { version = "0.1.4", git = "https://github.com/0xPolygonZero/plonky2.git", rev = "39a2d62d6d025631380da88aa78c2f8b929852a2" }
 # plonky2_crypto = { version = "0.1.0", git = "https://github.com/SoraSuegami/plonky2-crypto.git", branch = "fix/sha2_padding" }
 
@@ -63,3 +74,7 @@ harness = false
 # [[bench]]
 # name = "circom_twitter"
 # harness = false
+[patch.crates-io]
+ark-r1cs-std = { git = "https://github.com/winderica/r1cs-std", branch = "cherry-pick" }
+ark-bn254 = { git = "https://github.com/arnaucube/ark-curves-cherry-picked", branch = "cherry-pick" }
+ark-grumpkin = { git = "https://github.com/arnaucube/ark-curves-cherry-picked", branch = "cherry-pick" }

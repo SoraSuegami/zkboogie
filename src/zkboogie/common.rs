@@ -420,13 +420,13 @@ impl<F: FiniteRing, B: Backend<F>> ZKBoogieEachProof<F, B> {
         Ok(is_valid)
     }
 
-    pub fn to_field_vec(&mut self, circuit: &Circuit<F>) -> Vec<B::V> {
+    pub fn to_field_vec(&self, circuit: &Circuit<F>) -> Vec<B::V> {
         let mut vec = vec![];
-        vec.append(&mut self.e_input_shares);
+        vec.append(&mut self.e_input_shares.clone());
         vec.push(self.e2_input_commit.clone());
         vec.push(self.e2_view_commit.clone());
         vec.push(self.e2_rand_commit.clone());
-        vec.append(&mut self.e2_output_shares);
+        vec.append(&mut self.e2_output_shares.clone());
         vec.push(self.transcript_digest.clone());
         let gates = circuit.enumerate_gates();
         for gate in gates {
