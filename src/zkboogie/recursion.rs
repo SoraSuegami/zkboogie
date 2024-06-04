@@ -138,16 +138,34 @@ pub type DeciderFCircuit = DeciderEth<
 
 pub fn fold_setup(
     secpar: u8,
-    e: u8,
     circuit: &Circuit<F>,
     hasher_prefix: &[F],
-) -> (
+) -> [(
     ProverParams<G1, G2, KZG<'static, Bn254>, Pedersen<G2>>,
     VerifierParams<G1, G2>,
-) {
-    let f_circuit = build_f_circuit(secpar, e, circuit, hasher_prefix);
-    let (fs_prover_params, fs_verifier_params, kzg_vk) = init_nova_ivc_params(f_circuit);
-    (fs_prover_params, fs_verifier_params)
+); 3] {
+    let f_circuit0 = build_f_circuit(secpar, 0, circuit, hasher_prefix);
+    let f_circuit1 = build_f_circuit(secpar, 1, circuit, hasher_prefix);
+    let f_circuit2 = build_f_circuit(secpar, 2, circuit, hasher_prefix);
+    let mut rng = rand::rngs::OsRng;
+    let poseidon_config = poseidon_test_config::<Fr>();
+    let (r1cs, cf_r1cs) = get_r1cs::<G1, GVar, G2, GVar2, ZKBoogieEachVerifierCircuit>(
+        &poseidon_config,
+        f_circuit0.clone(),
+    )
+    .unwrap();
+    let cs_len = r1cs.A.n_rows;
+    let cf_cs_len = cf_r1cs.A.n_rows;
+    let (kzg_pk, kzg_vk): (KZGProverKey<G1>, KZGVerifierKey<Bn254>) =
+        KZG::<Bn254>::setup(&mut rng, cs_len).unwrap();
+    let (fs_prover_params0, fs_verifier_params0) = init_nova_ivc_params(f_circuit0, kzg_pk.clone());
+    let (fs_prover_params1, fs_verifier_params1) = init_nova_ivc_params(f_circuit1, kzg_pk.clone());
+    let (fs_prover_params2, fs_verifier_params2) = init_nova_ivc_params(f_circuit2, kzg_pk.clone());
+    [
+        (fs_prover_params0, fs_verifier_params0),
+        (fs_prover_params1, fs_verifier_params1),
+        (fs_prover_params2, fs_verifier_params2),
+    ]
 }
 
 pub fn build_f_circuit(
@@ -170,9 +188,37 @@ pub fn fold_proof(
     circuit: &Circuit<F>,
     hasher_prefix: &[F],
     expected_output: &[F],
+    proof: &ZKBoogieProof<F, NativeBackend<F, Poseidon254Native>>,
+    fs_params: &[(
+        ProverParams<G1, G2, KZG<'static, Bn254>, Pedersen<G2>>,
+        VerifierParams<G1, G2>,
+    ); 3],
+) -> Vec<NOVA> {
+    let mut novas = vec![];
+    for i in 0..3 {
+        novas.push(fold_proof_one(
+            secpar,
+            circuit,
+            hasher_prefix,
+            expected_output,
+            i as u8,
+            proof,
+            &fs_params[i].0,
+            fs_params[i].1.clone(),
+        ));
+    }
+    novas
+}
+
+fn fold_proof_one(
+    secpar: u8,
+    circuit: &Circuit<F>,
+    hasher_prefix: &[F],
+    expected_output: &[F],
     e: u8,
     proof: &ZKBoogieProof<F, NativeBackend<F, Poseidon254Native>>,
     fs_prover_params: &ProverParams<G1, G2, KZG<'static, Bn254>, Pedersen<G2>>,
+    fs_verifier_params: VerifierParams<G1, G2>,
 ) -> NOVA {
     let n_steps = compute_num_repeat(secpar) as usize;
     let f_circuit = ZKBoogieEachVerifierCircuit::new(ZKBoogieEachVerifierCircuitParams {
@@ -188,7 +234,7 @@ pub fn fold_proof(
     z_0.resize_with(f_circuit.state_len(), || Fr::zero());
     // let (fs_prover_params, fs_verifier_params, kzg_vk) =
     //     init_nova_ivc_params(r1cs, cf_r1cs, kzg_pk.clone());
-    let mut nova = NOVA::init(fs_prover_params, f_circuit.clone(), z_0).unwrap();
+    let mut nova = NOVA::init(fs_prover_params, f_circuit.clone(), z_0.clone()).unwrap();
     for i in 0..n_steps {
         let each_proof = &proof.each_proof[i];
         let enable = if each_proof.e == e {
@@ -209,6 +255,17 @@ pub fn fold_proof(
         nova.prove_step(external_inputs).unwrap();
     }
 
+    let (running_instance, incoming_instance, cyclefold_instance) = nova.instances();
+    NOVA::verify(
+        fs_verifier_params,
+        z_0,
+        nova.state(), // latest state
+        Fr::from(n_steps as u32),
+        running_instance,
+        incoming_instance,
+        cyclefold_instance,
+    )
+    .unwrap();
     // let rng = rand::rngs::OsRng;
     // let proof = DeciderFCircuit::prove(
     //     (g16_pk, fs_prover_params.cs_params.clone()),
@@ -234,18 +291,18 @@ pub fn fold_proof(
 // oritiginal: https://github.com/privacy-scaling-explorations/sonobe/blob/main/examples/utils.rs
 pub(crate) fn init_nova_ivc_params<FC: FCircuit<Fr>>(
     f_circuit: FC,
+    kzg_pk: KZGProverKey<'static, G1>,
 ) -> (
     ProverParams<G1, G2, KZG<'static, Bn254>, Pedersen<G2>>,
     VerifierParams<G1, G2>,
-    KZGVerifierKey<Bn254>,
 ) {
     let mut rng = rand::rngs::OsRng;
     let poseidon_config = poseidon_test_config::<Fr>();
     let (r1cs, cf_r1cs) = get_r1cs::<G1, GVar, G2, GVar2, FC>(&poseidon_config, f_circuit).unwrap();
     let cs_len = r1cs.A.n_rows;
     let cf_cs_len = cf_r1cs.A.n_rows;
-    let (kzg_pk, kzg_vk): (KZGProverKey<G1>, KZGVerifierKey<Bn254>) =
-        KZG::<Bn254>::setup(&mut rng, cs_len).unwrap();
+    // let (kzg_pk, kzg_vk): (KZGProverKey<G1>, KZGVerifierKey<Bn254>) =
+    //     KZG::<Bn254>::setup(&mut rng, cs_len).unwrap();
     // let (pedersen_params, _) = Pedersen::<G1>::setup(&mut rng, cf_len).unwrap();
     // let (kzg_pk, kzg_vk): (KZGProverKey<G1>, KZGVerifierKey<Bn254>) =
     //     KZG::<Bn254>::setup(&mut rng, cs_len).unwrap();
@@ -261,7 +318,7 @@ pub(crate) fn init_nova_ivc_params<FC: FCircuit<Fr>>(
         r1cs,
         cf_r1cs,
     };
-    (fs_prover_params, fs_verifier_params, kzg_vk)
+    (fs_prover_params, fs_verifier_params)
 }
 
 pub(crate) fn init_ivc_and_decider_params<FC: FCircuit<Fr>>(
