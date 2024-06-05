@@ -61,7 +61,7 @@ impl FCircuit<Fr> for ZKBoogieEachVerifierCircuit {
 
     fn state_len(&self) -> usize {
         let num_repeat = compute_num_repeat(self.params.secpar) as usize;
-        self.params.circuit.num_outputs() + num_repeat
+        self.params.circuit.num_outputs() + num_repeat + 1
     }
 
     fn external_inputs_len(&self) -> usize {
@@ -77,26 +77,25 @@ impl FCircuit<Fr> for ZKBoogieEachVerifierCircuit {
         z_i: Vec<Fr>,
         external_inputs: Vec<Fr>,
     ) -> Result<Vec<Fr>, Error> {
-        println!("i: {}", i);
-        // let is_enable = external_inputs[0].clone();
-        // let each_proof =
-        //     ZKBoogieEachProof::<F, NativeBackend<F, Poseidon254Native>>::from_field_vec(
-        //         &external_inputs[1..]
-        //             .iter()
-        //             .map(|v| F256(v.clone()))
-        //             .collect_vec(),
-        //         self.params.e,
-        //         &self.params.circuit,
-        //     );
+        let is_enable = external_inputs[0].clone();
+        let each_proof =
+            ZKBoogieEachProof::<F, NativeBackend<F, Poseidon254Native>>::from_field_vec(
+                &external_inputs[1..]
+                    .iter()
+                    .map(|v| F256(v.clone()))
+                    .collect_vec(),
+                self.params.e,
+                &self.params.circuit,
+            );
         let mut next_z = z_i.clone();
-        next_z[self.params.circuit.num_outputs() + i] = Fr::one();
-        // each_proof.transcript_digest.0;
-        // is_enable * each_proof.transcript_digest.0;
+        next_z[self.params.circuit.num_outputs()] += &Fr::one();
+        next_z[self.params.circuit.num_outputs() + 1 + i] =
+            is_enable * each_proof.transcript_digest.0;
         // println!(
         //     "native digest {:?}",
         //     is_enable * each_proof.transcript_digest.0
         // );
-        println!("next_z {:?}", next_z);
+        println!("next_z native {:?}", next_z);
         Ok(next_z)
     }
 
@@ -107,33 +106,51 @@ impl FCircuit<Fr> for ZKBoogieEachVerifierCircuit {
         z_i: Vec<ark_r1cs_std::fields::fp::FpVar<Fr>>,
         external_inputs: Vec<ark_r1cs_std::fields::fp::FpVar<Fr>>, // inputs that are not part of the state
     ) -> Result<Vec<ark_r1cs_std::fields::fp::FpVar<Fr>>, ark_relations::r1cs::SynthesisError> {
+        println!("constaints i {}", i);
         let mut back = ArkBackend::<Poseidon254Ark>::new(self.params.hasher_prefix.clone())
             .expect("Failed to create backend");
-        // let is_enable = external_inputs[0].clone();
-        // let each_proof = ZKBoogieEachProof::<F, ArkBackend<Poseidon254Ark>>::from_field_vec(
-        //     &external_inputs[1..],
-        //     self.params.e,
-        //     &self.params.circuit,
-        // );
-        // let expected_output = &z_i[0..self.params.circuit.num_outputs()];
-        // let is_valid = each_proof
-        //     .verify_each(&mut back, &self.params.circuit, expected_output)
-        //     .expect("Failed to verify each proof");
-        // {
-        //     let one = back.one().unwrap();
-        //     let subed = back.sub(&is_valid, &one).unwrap();
-        //     let muled = back.mul(&is_enable, &subed).unwrap();
-        //     back.force_zero(&muled).unwrap();
-        // }
-        // let transcript_digest = back.mul(&is_enable, &each_proof.transcript_digest).unwrap();
+        let is_enable = external_inputs[0].clone();
+        let each_proof = ZKBoogieEachProof::<F, ArkBackend<Poseidon254Ark>>::from_field_vec(
+            &external_inputs[1..],
+            self.params.e,
+            &self.params.circuit,
+        );
+        let expected_output = &z_i[0..self.params.circuit.num_outputs()];
+        let is_valid = each_proof
+            .verify_each(&mut back, &self.params.circuit, expected_output)
+            .expect("Failed to verify each proof");
+        {
+            let one = back.one().unwrap();
+            let subed = back.sub(&is_valid, &one).unwrap();
+            let muled = back.mul(&is_enable, &subed).unwrap();
+            back.force_zero(&muled).unwrap();
+        }
+        let transcript_digest = back.mul(&is_enable, &each_proof.transcript_digest).unwrap();
         // println!(
         //     "transcript_digest: {:?}",
         //     transcript_digest.value().unwrap()
         // );
         let mut next_z = z_i.clone();
-        next_z[self.params.circuit.num_outputs() + i] = back.one().unwrap();
+        let one = back.one().unwrap();
+        let last_idx = next_z[self.params.circuit.num_outputs()].clone();
+        println!("last_idx: {:?}", last_idx.value().unwrap());
+        next_z[self.params.circuit.num_outputs()] = back.add(&one, &last_idx).unwrap();
+        let num_repeat = compute_num_repeat(self.params.secpar) as usize;
+        for idx in 0..num_repeat {
+            let alloc_idx = back.constant(&F::from(idx as u32)).unwrap();
+            let is_target = back.eq(&alloc_idx, &last_idx).unwrap();
+            println!("is_target: {:?}", is_target.value().unwrap());
+            let origin_val = next_z[self.params.circuit.num_outputs() + 1 + idx].clone();
+            // println!("is_target: {:?}", is_target.cs());
+            next_z[self.params.circuit.num_outputs() + 1 + idx] = {
+                let subed = back.sub(&transcript_digest, &origin_val).unwrap();
+                let muled = back.mul(&is_target, &subed).unwrap();
+                back.add(&origin_val, &muled).unwrap()
+            };
+        }
+        // next_z[self.params.circuit.num_outputs() + i] = back.one().unwrap();
         println!(
-            "next_z {:?}",
+            "next_z constraints {:?}",
             next_z.iter().map(|v| v.value().unwrap()).collect_vec()
         );
         // each_proof.transcript_digest;
@@ -450,164 +467,4 @@ pub(crate) fn init_ivc_and_decider_params<FC: FCircuit<Fr>>(
     //     start.elapsed()
     // );
     (g16_pk, g16_vk)
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[derive(Debug, Clone)]
-    struct TestCircuitParams {
-        pub secpar: u8,
-        pub circuit: Circuit<F>,
-    }
-
-    #[derive(Debug, Clone)]
-    struct TestCircuit {
-        pub params: TestCircuitParams,
-    }
-
-    impl FCircuit<Fr> for TestCircuit {
-        type Params = TestCircuitParams;
-
-        fn new(params: Self::Params) -> Result<Self, Error> {
-            Ok(Self { params })
-        }
-
-        fn state_len(&self) -> usize {
-            let num_repeat = compute_num_repeat(self.params.secpar) as usize;
-            self.params.circuit.num_outputs() + num_repeat
-        }
-
-        fn external_inputs_len(&self) -> usize {
-            0
-        }
-
-        fn step_native(
-            &self,
-            i: usize,
-            z_i: Vec<Fr>,
-            external_inputs: Vec<Fr>,
-        ) -> Result<Vec<Fr>, Error> {
-            println!("i: {}", i);
-            // let is_enable = external_inputs[0].clone();
-            // let each_proof =
-            //     ZKBoogieEachProof::<F, NativeBackend<F, Poseidon254Native>>::from_field_vec(
-            //         &external_inputs[1..]
-            //             .iter()
-            //             .map(|v| F256(v.clone()))
-            //             .collect_vec(),
-            //         self.params.e,
-            //         &self.params.circuit,
-            //     );
-            let mut next_z = z_i.clone();
-            next_z[self.params.circuit.num_outputs() + i] = Fr::one();
-            // each_proof.transcript_digest.0;
-            // is_enable * each_proof.transcript_digest.0;
-            // println!(
-            //     "native digest {:?}",
-            //     is_enable * each_proof.transcript_digest.0
-            // );
-            // println!("next_z {:?}", next_z);
-            Ok(next_z)
-        }
-
-        fn generate_step_constraints(
-            &self,
-            cs: ark_relations::r1cs::ConstraintSystemRef<Fr>,
-            i: usize,
-            z_i: Vec<ark_r1cs_std::fields::fp::FpVar<Fr>>,
-            external_inputs: Vec<ark_r1cs_std::fields::fp::FpVar<Fr>>, // inputs that are not part of the state
-        ) -> Result<Vec<ark_r1cs_std::fields::fp::FpVar<Fr>>, ark_relations::r1cs::SynthesisError>
-        {
-            let mut back =
-                ArkBackend::<Poseidon254Ark>::new(vec![]).expect("Failed to create backend");
-            // let is_enable = external_inputs[0].clone();
-            // let each_proof = ZKBoogieEachProof::<F, ArkBackend<Poseidon254Ark>>::from_field_vec(
-            //     &external_inputs[1..],
-            //     self.params.e,
-            //     &self.params.circuit,
-            // );
-            // let expected_output = &z_i[0..self.params.circuit.num_outputs()];
-            // let is_valid = each_proof
-            //     .verify_each(&mut back, &self.params.circuit, expected_output)
-            //     .expect("Failed to verify each proof");
-            // {
-            //     let one = back.one().unwrap();
-            //     let subed = back.sub(&is_valid, &one).unwrap();
-            //     let muled = back.mul(&is_enable, &subed).unwrap();
-            //     back.force_zero(&muled).unwrap();
-            // }
-            // let transcript_digest = back.mul(&is_enable, &each_proof.transcript_digest).unwrap();
-            // println!(
-            //     "transcript_digest: {:?}",
-            //     transcript_digest.value().unwrap()
-            // );
-            let mut next_z = z_i.clone();
-            next_z[self.params.circuit.num_outputs() + i] = back.one().unwrap();
-            // println!(
-            //     "next_z {:?}",
-            //     next_z.iter().map(|v| v.value().unwrap()).collect_vec()
-            // );
-            // each_proof.transcript_digest;
-            // transcript_digest;
-            Ok(next_z)
-        }
-    }
-
-    pub type NOVATest = Nova<G1, GVar, G2, GVar2, TestCircuit, KZG<'static, Bn254>, Pedersen<G2>>;
-
-    #[test]
-    fn test_folding() {
-        let mut circuit_builder = CircuitBuilder::<F>::new();
-        let inputs = circuit_builder.inputs(3);
-        let add1 = circuit_builder.add(&inputs[0], &inputs[1]);
-        let add2 = circuit_builder.add(&inputs[1], &inputs[2]);
-        let mul = circuit_builder.mul(&add1, &add2);
-        let circuit = circuit_builder.output(&[mul]);
-        let secpar = 2;
-        let f_circuit = TestCircuit::new(TestCircuitParams { secpar, circuit }).unwrap();
-        let mut rng = rand::rngs::OsRng;
-        let poseidon_config = poseidon_test_config::<Fr>();
-        let (r1cs, cf_r1cs) =
-            get_r1cs::<G1, GVar, G2, GVar2, TestCircuit>(&poseidon_config, f_circuit.clone())
-                .unwrap();
-        let cs_len = r1cs.A.n_rows;
-        println!("cs_len: {}", cs_len);
-        let cf_cs_len = cf_r1cs.A.n_rows;
-        println!("cf_cs_len: {}", cf_cs_len);
-        let (kzg_pk, kzg_vk): (KZGProverKey<G1>, KZGVerifierKey<Bn254>) =
-            KZG::<Bn254>::setup(&mut rng, cs_len).unwrap();
-        let (fs_prover_params, fs_verifier_params) =
-            init_nova_ivc_params(f_circuit.clone(), kzg_pk.clone());
-
-        let mut rng = ark_std::test_rng();
-        let inputs = vec![F::rand(&mut rng), F::rand(&mut rng), F::rand(&mut rng)];
-        let expected_output = {
-            let add1 = inputs[0].add(&inputs[1]);
-            let add2 = inputs[1].add(&inputs[2]);
-            let mul = add1.mul(&add2);
-            vec![mul]
-        };
-
-        let n_steps = compute_num_repeat(secpar) as usize;
-        let mut z_0: Vec<Fr> = expected_output.into_iter().map(|v| v.0).collect_vec();
-        z_0.resize_with(f_circuit.state_len(), || Fr::zero());
-        let mut nova = NOVATest::init(&fs_prover_params, f_circuit.clone(), z_0.clone()).unwrap();
-        for i in 0..n_steps {
-            nova.prove_step(vec![]).unwrap();
-        }
-
-        let (running_instance, incoming_instance, cyclefold_instance) = nova.instances();
-        NOVA::verify(
-            fs_verifier_params,
-            z_0,
-            nova.state(), // latest state
-            Fr::from(n_steps as u32),
-            running_instance,
-            incoming_instance,
-            cyclefold_instance,
-        )
-        .unwrap();
-    }
 }
