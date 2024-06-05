@@ -58,7 +58,7 @@ fn bench_many_mul_circuit(c: &mut Criterion) {
     );
     let (fold_params, kzg_vk) = fold_setup(secpar, &circuit, &[]);
     let decider_params = decider_setup(secpar, &circuit, &[], &fold_params);
-    let novas = fold_prove(secpar, &circuit, &[], expected_output, &proof, &fold_params);
+    let novas = fold_prove(secpar, &circuit, &[], &[F::one()], &proof, &fold_params);
     group.bench_function("fold the zkboogie verifier circuits", |b| {
         b.iter(|| {
             let fold_time = start_timer!(|| "Folding");
@@ -69,7 +69,7 @@ fn bench_many_mul_circuit(c: &mut Criterion) {
     group.bench_function("prove the folded circuits", |b| {
         b.iter(|| {
             let prove_time = start_timer!(|| "Decider Proving");
-            let _ = decider_prove(&fold_params, kzg_vk, &decider_params, novas.clone());
+            let _ = decider_prove(&fold_params, kzg_vk.clone(), &decider_params, novas.clone());
             end_timer!(prove_time);
         })
     });
